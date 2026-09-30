@@ -153,14 +153,36 @@ func printUndoPlan(env *Env, p *app.UndoPlan) {
 		fmt.Fprintln(env.Stdout, strings.TrimRight(line, " "))
 	}
 	if len(p.Later) > 0 && len(p.Conflicts()) == 0 && p.Writes() > 0 {
-		subject, pronoun, verb := "Turn "+strconv.Itoa(p.Later[0]), "Its", "it relies"
+		subject, pronoun, verb := "turn "+strconv.Itoa(p.Later[0]), "Its", "it relies"
 		if len(p.Later) > 1 {
-			subject, pronoun, verb = "Turns "+joinAnd(itoas(p.Later)), "Their", "they rely"
+			subject, pronoun, verb = "turns "+joinAnd(itoas(p.Later)), "Their", "they rely"
 		}
 		fmt.Fprintln(env.Stdout)
-		fmt.Fprintf(env.Stdout, "%s came after turn %d. %s changes are kept, but if %s on what turn %d did, run your tests after the undo.\n",
-			subject, p.Turn.ID, pronoun, verb, p.Turn.ID)
+		fmt.Fprint(env.Stdout, wrap(fmt.Sprintf(
+			"Note: %s came after turn %d. %s changes are kept, but if %s on what turn %d did, run your tests after the undo.",
+			subject, p.Turn.ID, pronoun, verb, p.Turn.ID), 76))
 	}
+}
+
+// wrap breaks text into lines of at most width characters at spaces.
+func wrap(text string, width int) string {
+	var b strings.Builder
+	line := 0
+	for _, word := range strings.Fields(text) {
+		n := utf8.RuneCountInString(word)
+		if line > 0 && line+1+n > width {
+			b.WriteString("\n")
+			line = 0
+		}
+		if line > 0 {
+			b.WriteString(" ")
+			line++
+		}
+		b.WriteString(word)
+		line += n
+	}
+	b.WriteString("\n")
+	return b.String()
 }
 
 func describeUndo(p *app.UndoPlan, f app.UndoFile) string {
@@ -222,6 +244,10 @@ func printConflictDetails(env *Env, p *app.UndoPlan) {
 		if f.Markers != "" {
 			fmt.Fprintln(env.Stdout)
 			for _, line := range strings.Split(strings.TrimRight(f.Markers, "\n"), "\n") {
+				if line == "" {
+					fmt.Fprintln(env.Stdout)
+					continue
+				}
 				fmt.Fprintln(env.Stdout, "       "+markerLine(env, line))
 			}
 		}

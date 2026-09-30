@@ -102,14 +102,14 @@ func TestDryRunWinsOverYes(t *testing.T) {
 
 func TestUndoReportsConflictsAndWritesNothing(t *testing.T) {
 	repo := testutil.NewRepo(t)
-	repo.Write("f.txt", "a\nb\nc\n")
+	repo.Write("f.txt", "a\n\nb\nc\n")
 	repo.Write("g.txt", "g\n")
 	repo.Commit("initial")
 	record(t, repo, "Change b", func() {
-		repo.Write("f.txt", "a\nB\nc\n")
+		repo.Write("f.txt", "a\n\nB\nc\n")
 		repo.Write("g.txt", "G\n")
 	})
-	record(t, repo, "Change B again", func() { repo.Write("f.txt", "a\nB!\nc\n") })
+	record(t, repo, "Change B again", func() { repo.Write("f.txt", "a\n\nB!\nc\n") })
 
 	code, stdout, stderr := run(t, repo.Dir, "undo", "1", "--yes")
 	if code != 1 {
@@ -129,8 +129,13 @@ func TestUndoReportsConflictsAndWritesNothing(t *testing.T) {
 	if !strings.Contains(stderr, "cannot undo turn 1 cleanly, so nothing was changed") || !strings.Contains(stderr, "--file") {
 		t.Errorf("stderr = %q", stderr)
 	}
-	if repo.Read("g.txt") != "G\n" || repo.Read("f.txt") != "a\nB!\nc\n" {
+	if repo.Read("g.txt") != "G\n" || repo.Read("f.txt") != "a\n\nB!\nc\n" {
 		t.Error("files changed despite the conflict")
+	}
+	for _, line := range strings.Split(stdout, "\n") {
+		if strings.TrimRight(line, " ") != line {
+			t.Errorf("line has trailing spaces: %q", line)
+		}
 	}
 }
 
@@ -197,7 +202,14 @@ func TestUndoWarnsWhenLaterTurnsMayDependOnIt(t *testing.T) {
 	repo := oneTurn(t)
 	record(t, repo, "Use the new file", func() { repo.Write("c.txt", "uses b\n") })
 	_, stdout, _ := run(t, repo.Dir, "undo", "1")
-	if !strings.Contains(stdout, "Turn 2 came after turn 1") {
+	if !strings.Contains(stdout, "Note: turn 2 came after turn 1.") {
 		t.Errorf("output lacks the warning about later turns:\n%s", stdout)
+	}
+	for _, line := range strings.Split(stdout, "\n") {
+		if strings.HasPrefix(line, "Note:") || strings.Contains(line, "run your tests") {
+			if len(line) > 76 {
+				t.Errorf("note line is %d characters, want it wrapped at 76: %q", len(line), line)
+			}
+		}
 	}
 }
