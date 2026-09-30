@@ -2,12 +2,18 @@ package shadow
 
 import (
 	"bytes"
+	"crypto/sha1"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/Waiivyy/turnback/internal/git"
 )
@@ -152,14 +158,31 @@ func (r *Repo) BuildTree(base string, changes map[string]*Entry) (string, error)
 	return strings.TrimSpace(out), nil
 }
 
+// CheckoutError reports a checkout that could not finish.
+type CheckoutError struct {
+	Cause    error    // why the checkout stopped
+	Restored bool     // every path is back as it was before the checkout
+	Leftover []string // paths that could not be put back, when Restored is false
+}
+
+func (e *CheckoutError) Error() string {
+	if e.Restored {
+		return "nothing was changed: " + e.Cause.Error()
+	}
+	return fmt.Sprintf("%v; these files could not be put back: %s", e.Cause, strings.Join(e.Leftover, ", "))
+}
+
+func (e *CheckoutError) Unwrap() error { return e.Cause }
+
 // Checkout moves the working tree from snapshot from to snapshot to,
 // writing only the paths that differ.
 //
 // It never overwrites a file that changed on disk after from was taken, and
 // never overwrites or writes through anything git does not track: a file
 // the new snapshot adds is only created where nothing exists yet, inside
-// real folders. If it cannot finish, it puts back what it changed and
-// returns an error.
+// real folders. It does not trust git's exit status alone: after each
+// phase it checks every written path on disk. If anything is off, it puts
+// back what it changed, checks that too, and returns a *CheckoutError.
 //
 // The private index must match from for every path that differs between
 // from and to, as it does right after Snapshot. Other paths may differ;
@@ -171,34 +194,39 @@ func (r *Repo) Checkout(from, to string) error {
 	}
 	var adds []EntryChange
 	tracked := make(map[string]*Entry) // changed or deleted paths that exist in from
+	added := make(map[string]*Entry)
 	deleted := make(map[string]bool)
 	for _, c := range changes {
-		switch {
-		case c.Old == nil:
+		if c.Old == nil {
 			adds = append(adds, c)
-		default:
-			tracked[c.Path] = c.New
-			if c.New == nil {
-				deleted[c.Path] = true
-			}
+			added[c.Path] = c.New
+			continue
+		}
+		tracked[c.Path] = c.New
+		if c.New == nil {
+			deleted[c.Path] = true
 		}
 	}
 	// Fail early when an untracked file sits where a new file must go.
 	for _, c := range adds {
 		if err := r.checkFree(c.Path, deleted, false); err != nil {
-			return err
+			return &CheckoutError{Cause: err, Restored: true}
 		}
 	}
 
-	// Phase 1: files git already tracks. read-tree refuses, before writing
-	// anything, if one of them changed on disk.
-	mid := from
+	co := &checkout{repo: r, from: from, mid: from, changes: changes}
+	// Phase 1: files git already tracks. read-tree checks that none of them
+	// changed on disk, but it can still stop halfway (a folder that is not
+	// writable) or skip a deletion with only a warning.
 	if len(tracked) > 0 {
-		if mid, err = r.BuildTree(from, tracked); err != nil {
-			return err
+		if co.mid, err = r.BuildTree(from, tracked); err != nil {
+			return &CheckoutError{Cause: err, Restored: true}
 		}
-		if _, err := r.run.Run("read-tree", "-m", "-u", from, mid); err != nil {
-			return fmt.Errorf("working tree changed; nothing was written: %w", err)
+		if _, err := r.run.Run("read-tree", "-m", "-u", from, co.mid); err != nil {
+			return co.fail(err)
+		}
+		if err := r.verify(tracked); err != nil {
+			return co.fail(err)
 		}
 	}
 	if len(adds) == 0 {
@@ -210,11 +238,13 @@ func (r *Repo) Checkout(from, to string) error {
 	// the writing; it creates each file exclusively.
 	for _, c := range adds {
 		if err := r.checkFree(c.Path, nil, true); err != nil {
-			return r.rollback(err, mid, from, nil)
+			return co.fail(err)
 		}
 	}
-	if _, err := r.run.Run("read-tree", "-m", mid, to); err != nil {
-		return r.rollback(err, mid, from, nil)
+	co.newDirs = r.missingDirs(adds)
+	co.created = adds
+	if _, err := r.run.Run("read-tree", "-m", co.mid, to); err != nil {
+		return co.fail(err)
 	}
 	var list bytes.Buffer
 	for _, c := range adds {
@@ -222,9 +252,137 @@ func (r *Repo) Checkout(from, to string) error {
 		list.WriteByte(0)
 	}
 	if _, err := r.run.RunInput(list.Bytes(), "checkout-index", "-u", "-z", "--stdin"); err != nil {
-		return r.rollback(err, mid, from, adds)
+		return co.fail(err)
+	}
+	if err := r.verify(added); err != nil {
+		return co.fail(err)
 	}
 	return nil
+}
+
+// checkout remembers what a Checkout did, so a failure can be undone.
+type checkout struct {
+	repo      *Repo
+	from, mid string        // mid is from with phase 1 applied
+	changes   []EntryChange // every path the checkout touches
+	created   []EntryChange // paths phase 2 may have created
+	newDirs   []string      // folders phase 2 may have created, parents first
+}
+
+// fail puts every path of the checkout back as it was in from, checks the
+// result, and returns a *CheckoutError describing the outcome.
+func (co *checkout) fail(cause error) error {
+	r := co.repo
+	for _, c := range co.created {
+		if r.matches(c.Path, c.New) { // only remove what this checkout wrote
+			os.Remove(filepath.Join(r.root, filepath.FromSlash(c.Path)))
+		}
+	}
+	for i := len(co.newDirs) - 1; i >= 0; i-- {
+		os.Remove(co.newDirs[i]) // only succeeds while empty
+	}
+	var putBack error
+	if _, err := r.Snapshot(); err != nil {
+		putBack = err
+	} else if co.mid != co.from {
+		_, putBack = r.run.Run("read-tree", "-m", "-u", co.mid, co.from)
+	}
+	var leftover []string
+	for _, c := range co.changes {
+		if !r.matches(c.Path, c.Old) {
+			leftover = append(leftover, c.Path)
+		}
+	}
+	if len(leftover) == 0 {
+		return &CheckoutError{Cause: cause, Restored: true}
+	}
+	if putBack != nil {
+		cause = fmt.Errorf("%w (putting files back failed too: %v)", cause, putBack)
+	}
+	return &CheckoutError{Cause: cause, Leftover: leftover}
+}
+
+// verify checks that every path is on disk exactly as expected; a nil
+// entry means the path must not exist.
+func (r *Repo) verify(expected map[string]*Entry) error {
+	var wrong []string
+	for path, e := range expected {
+		if !r.matches(path, e) {
+			wrong = append(wrong, path)
+		}
+	}
+	if len(wrong) == 0 {
+		return nil
+	}
+	sort.Strings(wrong)
+	if len(wrong) > 5 {
+		wrong = append(wrong[:5], fmt.Sprintf("and %d more", len(wrong)-5))
+	}
+	return fmt.Errorf("could not write or delete %s", strings.Join(wrong, ", "))
+}
+
+// matches reports whether path is on disk exactly as e describes: same
+// content, type and executable bit. A nil entry means it must not exist.
+func (r *Repo) matches(path string, e *Entry) bool {
+	abs := filepath.Join(r.root, filepath.FromSlash(path))
+	fi, err := os.Lstat(abs)
+	if e == nil {
+		return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
+	}
+	if err != nil {
+		return false
+	}
+	switch {
+	case e.Submodule():
+		return fi.IsDir()
+	case e.Symlink():
+		if fi.Mode()&os.ModeSymlink == 0 {
+			return false
+		}
+		target, err := os.Readlink(abs)
+		return err == nil && blobID([]byte(target), len(e.ID)) == e.ID
+	}
+	if !fi.Mode().IsRegular() {
+		return false
+	}
+	if r.fileMode && (e.Mode == "100755") != (fi.Mode()&0o111 != 0) {
+		return false
+	}
+	content, err := os.ReadFile(abs)
+	return err == nil && blobID(content, len(e.ID)) == e.ID
+}
+
+// blobID computes a git blob id without running git; the length of the id
+// it is compared with tells SHA-1 from SHA-256 repositories.
+func blobID(content []byte, hexLen int) string {
+	var h hash.Hash = sha1.New()
+	if hexLen == 64 {
+		h = sha256.New()
+	}
+	fmt.Fprintf(h, "blob %d\x00", len(content))
+	h.Write(content)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// missingDirs lists the folders that creating the new files will create,
+// parents before children.
+func (r *Repo) missingDirs(adds []EntryChange) []string {
+	seen := make(map[string]bool)
+	var dirs []string
+	for _, c := range adds {
+		parts := strings.Split(c.Path, "/")
+		for i := 1; i < len(parts); i++ {
+			dir := filepath.Join(r.root, filepath.FromSlash(strings.Join(parts[:i], "/")))
+			if seen[dir] {
+				continue
+			}
+			seen[dir] = true
+			if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
+				dirs = append(dirs, dir)
+			}
+		}
+	}
+	return dirs
 }
 
 // checkFree reports an error unless a new file can be created at path:
@@ -237,7 +395,7 @@ func (r *Repo) checkFree(path string, deleted map[string]bool, strict bool) erro
 	for i := range parts {
 		rel := strings.Join(parts[:i+1], "/")
 		fi, err := os.Lstat(filepath.Join(r.root, filepath.FromSlash(rel)))
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil // this and everything below it will be created
 		}
 		if err != nil {
@@ -249,6 +407,8 @@ func (r *Repo) checkFree(path string, deleted map[string]bool, strict bool) erro
 			return nil // phase 1 removes it
 		case last && fi.IsDir() && !strict:
 			continue // phase 1 may empty and remove it
+		case last && fi.IsDir():
+			return fmt.Errorf("cannot create %s: a folder with that name is in the way", path)
 		case last:
 			return fmt.Errorf("cannot create %s: a file git does not track is in the way", path)
 		case fi.Mode()&os.ModeSymlink != 0:
@@ -260,43 +420,12 @@ func (r *Repo) checkFree(path string, deleted map[string]bool, strict bool) erro
 	return nil
 }
 
-// rollback undoes phase 1 after phase 2 failed, removing any new files that
-// were already written. It returns cause, or cause and the rollback error.
-func (r *Repo) rollback(cause error, mid, from string, created []EntryChange) error {
-	for _, c := range created {
-		abs := filepath.Join(r.root, filepath.FromSlash(c.Path))
-		if r.isEntry(abs, c.New) {
-			os.Remove(abs)
-		}
-	}
-	if _, err := r.Snapshot(); err != nil {
-		return fmt.Errorf("%w; putting files back also failed: %v", cause, err)
-	}
-	if mid != from {
-		if _, err := r.run.Run("read-tree", "-m", "-u", mid, from); err != nil {
-			return fmt.Errorf("%w; putting files back also failed: %v", cause, err)
-		}
-	}
-	return fmt.Errorf("nothing was changed: %w", cause)
-}
-
-// isEntry reports whether the file at abs has exactly the content of e.
-func (r *Repo) isEntry(abs string, e *Entry) bool {
-	want, err := r.ReadBlob(e.ID)
-	if err != nil {
-		return false
-	}
-	var got []byte
-	if e.Symlink() {
-		target, err := os.Readlink(abs)
-		if err != nil {
-			return false
-		}
-		got = []byte(target)
-	} else if got, err = os.ReadFile(abs); err != nil {
-		return false
-	}
-	return bytes.Equal(got, want)
+// Uninterruptible returns a copy of r whose git commands keep running when
+// the user presses Ctrl-C.
+func (r *Repo) Uninterruptible() *Repo {
+	c := *r
+	c.run.Detach = true
+	return &c
 }
 
 // IndexTree returns the tree recorded in the private index.

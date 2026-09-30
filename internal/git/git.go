@@ -15,9 +15,10 @@ import (
 
 // Runner runs git in a fixed directory with fixed global options.
 type Runner struct {
-	Dir  string   // working directory for every command
-	Opts []string // global options placed before the subcommand, e.g. "--git-dir=..."
-	Env  []string // extra KEY=VALUE environment entries
+	Dir    string   // working directory for every command
+	Opts   []string // global options placed before the subcommand, e.g. "--git-dir=..."
+	Env    []string // extra KEY=VALUE environment entries
+	Detach bool     // run git outside the terminal's process group, immune to Ctrl-C
 }
 
 // Error is returned when git exits with a non-zero status.
@@ -57,6 +58,9 @@ func (r Runner) RunInput(stdin []byte, args ...string) ([]byte, error) {
 	cmd := exec.Command("git", append(append([]string{}, r.Opts...), args...)...)
 	cmd.Dir = r.Dir
 	cmd.Env = append(cleanEnv(os.Environ()), r.Env...)
+	if r.Detach {
+		detach(cmd)
+	}
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}

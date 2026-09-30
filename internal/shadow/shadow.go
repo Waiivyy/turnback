@@ -35,10 +35,11 @@ var identity = []string{
 
 // Repo is a private snapshot repository for one working tree.
 type Repo struct {
-	root   string
-	gitDir string
-	ownDir string // top-level folder of root holding gitDir, never snapshotted
-	run    git.Runner
+	root     string
+	gitDir   string
+	ownDir   string // top-level folder of root holding gitDir, never snapshotted
+	fileMode bool   // the file system keeps the executable bit
+	run      git.Runner
 }
 
 // Change is one file that differs between two snapshots.
@@ -74,6 +75,9 @@ func Open(root, gitDir string) (*Repo, error) {
 		return nil, err
 	}
 	r.run = git.Runner{Dir: root, Opts: opts, Env: identity}
+	// git init probes whether the file system keeps the executable bit.
+	out, err := r.run.Run("config", "--type=bool", "--default=true", "core.fileMode")
+	r.fileMode = err != nil || strings.TrimSpace(out) != "false"
 	return r, nil
 }
 

@@ -1,8 +1,10 @@
 package shadow_test
 
 import (
+	"errors"
 	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -176,7 +178,14 @@ func TestIndexTreeMatchesTheLastSnapshotOrCheckout(t *testing.T) {
 	if paths, err := r.Paths(tree); err != nil || !reflect.DeepEqual(paths, []string{"a.txt"}) {
 		t.Errorf("Paths = %q, %v", paths, err)
 	}
-	_ = os.Getpid
+	blob, _ := r.WriteBlob([]byte("y\n"))
+	next, _ := r.BuildTree(tree, map[string]*shadow.Entry{"a.txt": {Mode: "100644", ID: blob}, "b.txt": {Mode: "100644", ID: blob}})
+	if err := r.Checkout(tree, next); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := r.IndexTree(); err != nil || got != next {
+		t.Errorf("IndexTree after Checkout = %q, %v; want %q", got, err, next)
+	}
 }
 
 func TestCheckoutReplacesAFileWithAFolderAndBack(t *testing.T) {
@@ -269,5 +278,96 @@ func TestCheckoutRefusesToWriteThroughASymlinkedFolder(t *testing.T) {
 	}
 	if _, err := os.Stat(outside + "/lib.go"); err == nil {
 		t.Error("a file was written outside the repository")
+	}
+}
+
+// readOnly makes dir unwritable for the rest of the test. Permission tests
+// are meaningless for root and differ on Windows, so they are skipped there.
+func readOnly(t *testing.T, dir string) {
+	t.Helper()
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions and a non-root user")
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+}
+
+func TestCheckoutPutsBackEarlierChangesWhenAWriteFails(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write("ro/b.txt", "b2\n")
+	repo.Write("zz-notes.md", "notes\n")
+	r, _ := open(t, repo)
+	from := snapshot(t, r)
+	old, _ := r.WriteBlob([]byte("b1\n"))
+	// read-tree deletes zz-notes.md first, then fails to rewrite ro/b.txt.
+	to, err := r.BuildTree(from, map[string]*shadow.Entry{"ro/b.txt": {Mode: "100644", ID: old}, "zz-notes.md": nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readOnly(t, repo.Path("ro"))
+
+	err = r.Checkout(from, to)
+	var failed *shadow.CheckoutError
+	if !errors.As(err, &failed) || !failed.Restored {
+		t.Fatalf("Checkout err = %v, want a CheckoutError with everything restored", err)
+	}
+	if got := repo.Read("zz-notes.md"); got != "notes\n" {
+		t.Errorf("zz-notes.md = %q, want it put back", got)
+	}
+	if got := repo.Read("ro/b.txt"); got != "b2\n" {
+		t.Errorf("ro/b.txt = %q", got)
+	}
+}
+
+func TestCheckoutNoticesADeletionTheSystemRefused(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write("a.txt", "a2\n")
+	repo.Write("ro/new.txt", "g\n")
+	r, _ := open(t, repo)
+	from := snapshot(t, r)
+	old, _ := r.WriteBlob([]byte("a1\n"))
+	to, err := r.BuildTree(from, map[string]*shadow.Entry{"a.txt": {Mode: "100644", ID: old}, "ro/new.txt": nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// git only warns when it cannot delete a file, and exits 0.
+	readOnly(t, repo.Path("ro"))
+
+	err = r.Checkout(from, to)
+	var failed *shadow.CheckoutError
+	if !errors.As(err, &failed) || !failed.Restored {
+		t.Fatalf("Checkout err = %v, want a CheckoutError with everything restored", err)
+	}
+	if !strings.Contains(err.Error(), "ro/new.txt") {
+		t.Errorf("error %q does not name the file that could not be deleted", err)
+	}
+	if got := repo.Read("a.txt"); got != "a2\n" {
+		t.Errorf("a.txt = %q, want the change rolled back", got)
+	}
+}
+
+func TestCheckoutRemovesFoldersItCreatedWhenItRollsBack(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write("ro/keep.txt", "k\n")
+	r, _ := open(t, repo)
+	from := snapshot(t, r)
+	blob, _ := r.WriteBlob([]byte("new\n"))
+	to, err := r.BuildTree(from, map[string]*shadow.Entry{
+		"newdir/sub/f.txt": {Mode: "100644", ID: blob},
+		"ro/g.txt":         {Mode: "100644", ID: blob},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readOnly(t, repo.Path("ro"))
+
+	var failed *shadow.CheckoutError
+	if err := r.Checkout(from, to); !errors.As(err, &failed) || !failed.Restored {
+		t.Fatalf("Checkout err = %v, want a CheckoutError with everything restored", err)
+	}
+	if repo.Exists("newdir") {
+		t.Error("newdir/ was left behind by the rollback")
 	}
 }

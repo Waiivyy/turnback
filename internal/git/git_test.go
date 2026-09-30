@@ -137,3 +137,11 @@ func TestUncommittedWithoutAnyCommit(t *testing.T) {
 		t.Errorf("Uncommitted = %v, %v; want a.txt uncommitted", got, err)
 	}
 }
+
+func TestDetachedCommandsStillRun(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	out, err := git.Runner{Dir: repo.Dir, Detach: true}.RunInput([]byte("hello\n"), "hash-object", "--stdin")
+	if err != nil || strings.TrimSpace(string(out)) != "ce013625030ba8dba906f756967f9e9ca394464a" {
+		t.Errorf("detached run = %q, %v", out, err)
+	}
+}
