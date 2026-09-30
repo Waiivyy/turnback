@@ -20,10 +20,21 @@ func Isolate(t testing.TB) {
 	}
 	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	// Also hides the default global ignore and attributes files.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("GIT_AUTHOR_NAME", "Test Author")
 	t.Setenv("GIT_AUTHOR_EMAIL", "author@example.com")
 	t.Setenv("GIT_COMMITTER_NAME", "Test Author")
 	t.Setenv("GIT_COMMITTER_EMAIL", "author@example.com")
+}
+
+// SetGlobalConfig sets a value in the isolated global git configuration.
+func SetGlobalConfig(t testing.TB, key, value string) {
+	t.Helper()
+	cmd := exec.Command("git", "config", "--global", key, value)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git config --global %s: %v\n%s", key, err, out)
+	}
 }
 
 // TempDir returns a new temporary directory with symlinks resolved, so it
