@@ -317,3 +317,25 @@ func TestANestedRepositoryWithoutCommitsDoesNotBreakSnapshots(t *testing.T) {
 		t.Errorf("snapshot = %q, want only a.txt", got)
 	}
 }
+
+func TestSnapshotFollowsAFileReplacedByAFolderAndBack(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write("utils", "a file\n")
+	repo.Write("lib/a.ts", "a\n")
+	repo.Commit("initial") // both are tracked by the user's repository
+	r, gitDir := open(t, repo)
+	snapshot(t, r)
+
+	repo.Remove("utils")
+	repo.Write("utils/index.ts", "export {}\n")
+	repo.Remove("lib/a.ts")
+	repo.Remove("lib")
+	repo.Write("lib", "now a file\n")
+	tree, err := r.Snapshot()
+	if err != nil {
+		t.Fatalf("Snapshot after swapping files and folders: %v", err)
+	}
+	if got := files(t, repo, gitDir, tree); !reflect.DeepEqual(got, []string{"lib", "utils/index.ts"}) {
+		t.Errorf("snapshot = %q", got)
+	}
+}

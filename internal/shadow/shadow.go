@@ -158,13 +158,14 @@ func (r *Repo) Snapshot() (string, error) {
 		}
 	}
 	// Add or refresh the rest. Unchanged files are skipped by their stat
-	// data, and files missing from disk are removed.
+	// data, files missing from disk are removed, and --replace lets a file
+	// take the place of a folder's entries and the other way round.
 	var list bytes.Buffer
 	for _, path := range sortedKeys(members) {
 		list.WriteString(path)
 		list.WriteByte(0)
 	}
-	if _, err := r.run.RunInput(list.Bytes(), "update-index", "-z", "--add", "--remove", "--stdin"); err != nil {
+	if _, err := r.run.RunInput(list.Bytes(), "update-index", "-z", "--add", "--remove", "--replace", "--stdin"); err != nil {
 		return "", fmt.Errorf("snapshot: %w", err)
 	}
 	out, err := r.run.Run("write-tree")
@@ -206,8 +207,14 @@ func (r *Repo) members() (map[string]bool, error) {
 	}
 	for _, entry := range splitNUL(staged) {
 		meta, path, _ := strings.Cut(entry, "\t")
-		if strings.HasPrefix(meta, "160000 ") && !r.hasCommit(path) {
-			continue // a submodule that is not checked out
+		if strings.HasPrefix(meta, "160000 ") {
+			if r.hasCommit(path) { // a submodule that is checked out
+				add(path)
+			}
+			continue
+		}
+		if fi, err := os.Lstat(filepath.Join(r.root, filepath.FromSlash(path))); err == nil && fi.IsDir() {
+			continue // a tracked file replaced by a folder; its files are listed as untracked
 		}
 		add(path)
 	}
