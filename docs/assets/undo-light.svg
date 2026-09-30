@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="118" viewBox="0 0 880 118" role="img" aria-label="After turnback undo 2: turn 1, your edits and turn 3 are kept, turn 2 is taken back, and the undo is recorded as turn 4.">
+<rect x="8" y="44" width="164" height="64" rx="12" fill="#4f46e5"/>
+<text x="90.0" y="73" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#ffffff">turn 1</text>
+<text x="90.0" y="92" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e0e7ff">kept</text>
+<rect x="184" y="44" width="164" height="64" rx="12" fill="#f6f8fa" stroke="#afb8c1" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="266.0" y="73" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#59636e">your edits</text>
+<text x="266.0" y="92" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#59636e">kept</text>
+<rect x="360" y="44" width="164" height="64" rx="12" fill="#fff1f0" stroke="#cf222e" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="442.0" y="16" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" fill="#cf222e">turnback undo 2</text>
+<path d="M442.0 23V36" stroke="#cf222e" stroke-width="1.5"/>
+<path d="M437.0 32L442.0 40L447.0 32Z" fill="#cf222e"/>
+<text x="442.0" y="73" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#cf222e" text-decoration="line-through">turn 2</text>
+<text x="442.0" y="92" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#cf222e">taken back</text>
+<rect x="536" y="44" width="164" height="64" rx="12" fill="#4f46e5"/>
+<text x="618.0" y="73" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#ffffff">turn 3</text>
+<text x="618.0" y="92" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e0e7ff">kept</text>
+<rect x="712" y="44" width="164" height="64" rx="12" fill="#1a7f37"/>
+<text x="794.0" y="73" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#ffffff">turn 4</text>
+<text x="794.0" y="92" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#dafbe1">the undo of turn 2</text>
+</svg>
