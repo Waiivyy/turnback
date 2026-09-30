@@ -672,3 +672,27 @@ func TestUndoCoversTrackedFilesThatMatchAnIgnorePattern(t *testing.T) {
 		t.Errorf("deps.lock = %q, app.js = %q", repo.Read("deps.lock"), repo.Read("app.js"))
 	}
 }
+
+func TestSkipWorktreeEditsStillCountAsUnsaved(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	lines := "1\n2\n3\n4\n5\n6\n7\n8\n"
+	repo.Write("settings.json", lines)
+	repo.Commit("initial")
+	a := openApp(t, repo)
+	turn(t, a, "Change line 2", func() { repo.Write("settings.json", strings.Replace(lines, "2\n", "TWO\n", 1)) })
+	repo.Commit("keep the turn")
+	repo.Git("update-index", "--skip-worktree", "settings.json")
+	repo.Write("settings.json", strings.Replace(strings.Replace(lines, "2\n", "TWO\n", 1), "8\n", "MY-LOCAL-TOKEN\n", 1))
+	if got := repo.Git("status", "--porcelain"); got != "" {
+		t.Fatalf("expected git status to hide the edit, got %q", got)
+	}
+
+	p := planUndo(t, a, 1)
+	if f := planned(t, p, "settings.json"); !f.Dirty {
+		t.Errorf("settings.json plan = %+v, want it flagged as unsaved", f)
+	}
+	var dirty *app.DirtyError
+	if _, err := a.ApplyUndo(p, false); !errors.As(err, &dirty) {
+		t.Errorf("ApplyUndo err = %v, want DirtyError", err)
+	}
+}

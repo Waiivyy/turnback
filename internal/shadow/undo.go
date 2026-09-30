@@ -2,12 +2,8 @@ package shadow
 
 import (
 	"bytes"
-	"crypto/sha1"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"hash"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -340,7 +336,7 @@ func (r *Repo) matches(path string, e *Entry) bool {
 			return false
 		}
 		target, err := os.Readlink(abs)
-		return err == nil && blobID([]byte(target), len(e.ID)) == e.ID
+		return err == nil && git.BlobID([]byte(target), len(e.ID)) == e.ID
 	}
 	if !fi.Mode().IsRegular() {
 		return false
@@ -349,19 +345,7 @@ func (r *Repo) matches(path string, e *Entry) bool {
 		return false
 	}
 	content, err := os.ReadFile(abs)
-	return err == nil && blobID(content, len(e.ID)) == e.ID
-}
-
-// blobID computes a git blob id without running git; the length of the id
-// it is compared with tells SHA-1 from SHA-256 repositories.
-func blobID(content []byte, hexLen int) string {
-	var h hash.Hash = sha1.New()
-	if hexLen == 64 {
-		h = sha256.New()
-	}
-	fmt.Fprintf(h, "blob %d\x00", len(content))
-	h.Write(content)
-	return hex.EncodeToString(h.Sum(nil))
+	return err == nil && git.BlobID(content, len(e.ID)) == e.ID
 }
 
 // missingDirs lists the folders that creating the new files will create,

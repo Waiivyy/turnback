@@ -1,10 +1,17 @@
 package git
 
 import (
+	"crypto/sha1"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // ErrNotRepository means the directory is not inside a git working tree.
@@ -41,26 +48,86 @@ func Locate(dir string) (Location, error) {
 	return loc, nil
 }
 
-// Uncommitted returns the subset of paths (relative to root) whose content
-// in the working tree or the staging area differs from HEAD, including
-// untracked files and deletions. It does not write to the index.
-func Uncommitted(root string, paths []string) (map[string]bool, error) {
-	out := make(map[string]bool)
+// Committed reports, for each of paths (relative to root), whether its
+// content in the working tree is exactly what HEAD holds, compared the way
+// git compares it: after line-ending and other filters, and including the
+// executable bit and symlink targets. A path that exists in neither counts
+// as committed. Unlike git status, it is not fooled by files marked
+// skip-worktree or assume-unchanged. It does not write to the repository.
+func Committed(root string, paths []string) (map[string]bool, error) {
+	out := make(map[string]bool, len(paths))
 	if len(paths) == 0 {
 		return out, nil
 	}
-	r := Runner{Dir: root, Opts: []string{"--literal-pathspecs"}}
-	args := append([]string{"status", "--porcelain=v1", "-z", "--no-renames",
-		"--untracked-files=all", "--ignore-submodules=all", "--"}, paths...)
-	status, err := r.Run(args...)
-	if err != nil {
-		return nil, err
+	r := Runner{Dir: root}
+	type entry struct{ mode, id string }
+	head := make(map[string]entry)
+	if _, err := r.Run("rev-parse", "--verify", "-q", "HEAD"); err == nil {
+		listing, err := r.Run("ls-tree", "-r", "-z", "--full-tree", "HEAD")
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range strings.Split(listing, "\x00") {
+			meta, path, ok := strings.Cut(item, "\t") // "<mode> <type> <id>\t<path>"
+			if f := strings.Fields(meta); ok && len(f) == 3 {
+				head[path] = entry{f[0], f[2]}
+			}
+		}
 	}
-	for _, entry := range strings.Split(status, "\x00") {
-		// Each entry is "XY path".
-		if len(entry) > 3 {
-			out[entry[3:]] = true
+	fileMode := true
+	if v, err := r.Run("config", "--type=bool", "--default=true", "core.fileMode"); err == nil {
+		fileMode = strings.TrimSpace(v) != "false"
+	}
+
+	var toHash []string
+	for _, p := range paths {
+		want, inHead := head[p]
+		abs := filepath.Join(root, filepath.FromSlash(p))
+		fi, err := os.Lstat(abs)
+		switch {
+		case err != nil:
+			out[p] = !inHead && (errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR))
+		case !inHead:
+			out[p] = false
+		case fi.Mode()&os.ModeSymlink != 0:
+			target, err := os.Readlink(abs)
+			out[p] = err == nil && want.mode == "120000" && BlobID([]byte(target), len(want.id)) == want.id
+		case !fi.Mode().IsRegular() || want.mode == "120000" || want.mode == "160000":
+			out[p] = false
+		case fileMode && (want.mode == "100755") != (fi.Mode()&0o111 != 0):
+			out[p] = false
+		case strings.ContainsAny(p, "\n\r"):
+			out[p] = false // hash-object reads one name per line; assume unsaved
+		default:
+			toHash = append(toHash, p)
+		}
+	}
+	if len(toHash) > 0 {
+		// hash-object applies the same filters git add would.
+		ids, err := r.RunInput([]byte(strings.Join(toHash, "\n")+"\n"), "hash-object", "--stdin-paths")
+		if err != nil {
+			return nil, err
+		}
+		lines := strings.Split(strings.TrimSpace(string(ids)), "\n")
+		if len(lines) != len(toHash) {
+			return nil, fmt.Errorf("git hash-object returned %d ids for %d files", len(lines), len(toHash))
+		}
+		for i, p := range toHash {
+			out[p] = lines[i] == head[p].id
 		}
 	}
 	return out, nil
+}
+
+// BlobID computes the id git gives a blob with this content. hexLen, the
+// length of an id from the same repository, tells SHA-1 (40) from SHA-256
+// (64).
+func BlobID(content []byte, hexLen int) string {
+	var h hash.Hash = sha1.New()
+	if hexLen == 64 {
+		h = sha256.New()
+	}
+	fmt.Fprintf(h, "blob %d\x00", len(content))
+	h.Write(content)
+	return hex.EncodeToString(h.Sum(nil))
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -101,40 +102,68 @@ func TestLocateOutsideARepository(t *testing.T) {
 	}
 }
 
-func TestUncommittedFindsEveryKindOfUncommittedChange(t *testing.T) {
+func TestCommittedComparesWorkingFilesWithHEADByContent(t *testing.T) {
 	repo := testutil.NewRepo(t)
-	for _, f := range []string{"clean.txt", "modified.txt", "staged.txt", "deleted.txt", "odd [name].txt"} {
+	repo.Git("config", "core.autocrlf", "true")
+	for _, f := range []string{"clean.txt", "modified.txt", "staged.txt", "deleted.txt", "odd [name].txt", "hidden.txt", "script.sh"} {
 		repo.Write(f, "committed\n")
 	}
+	repo.Write("crlf.txt", "one\ntwo\n")
+	if runtime.GOOS != "windows" {
+		if err := os.Symlink("clean.txt", repo.Path("link")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink("clean.txt", repo.Path("moved-link")); err != nil {
+			t.Fatal(err)
+		}
+	}
 	repo.Commit("initial")
+
 	repo.Write("modified.txt", "changed\n")
 	repo.Write("staged.txt", "changed\n")
 	repo.Git("add", "staged.txt")
 	repo.Remove("deleted.txt")
 	repo.Write("untracked.txt", "new\n")
-
-	asked := []string{"clean.txt", "modified.txt", "staged.txt", "deleted.txt", "untracked.txt", "odd [name].txt", "missing.txt"}
-	got, err := git.Uncommitted(repo.Dir, asked)
+	repo.Write("crlf.txt", "one\r\ntwo\r\n") // git normalizes this back to what HEAD has
+	// git status hides changes to skip-worktree files; content does not lie.
+	repo.Git("update-index", "--skip-worktree", "hidden.txt")
+	repo.Write("hidden.txt", "a local secret\n")
+	want := map[string]bool{
+		"clean.txt": true, "odd [name].txt": true, "crlf.txt": true, "missing.txt": true,
+		"modified.txt": false, "staged.txt": false, "deleted.txt": false, "untracked.txt": false,
+		"hidden.txt": false,
+	}
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(repo.Path("script.sh"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		repo.Remove("moved-link")
+		if err := os.Symlink("odd [name].txt", repo.Path("moved-link")); err != nil {
+			t.Fatal(err)
+		}
+		want["script.sh"], want["link"], want["moved-link"] = false, true, false
+	}
+	var asked []string
+	for p := range want {
+		asked = append(asked, p)
+	}
+	got, err := git.Committed(repo.Dir, asked)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]bool{"modified.txt": true, "staged.txt": true, "deleted.txt": true, "untracked.txt": true}
-	if len(got) != len(want) {
-		t.Errorf("Uncommitted = %v, want %v", got, want)
-	}
-	for p := range want {
-		if !got[p] {
-			t.Errorf("%s not reported as uncommitted", p)
+	for p, w := range want {
+		if got[p] != w {
+			t.Errorf("Committed(%q) = %v, want %v", p, got[p], w)
 		}
 	}
 }
 
-func TestUncommittedWithoutAnyCommit(t *testing.T) {
+func TestCommittedWithoutAnyCommit(t *testing.T) {
 	repo := testutil.NewRepo(t)
 	repo.Write("a.txt", "x\n")
-	got, err := git.Uncommitted(repo.Dir, []string{"a.txt"})
-	if err != nil || !got["a.txt"] {
-		t.Errorf("Uncommitted = %v, %v; want a.txt uncommitted", got, err)
+	got, err := git.Committed(repo.Dir, []string{"a.txt", "missing.txt"})
+	if err != nil || got["a.txt"] || !got["missing.txt"] {
+		t.Errorf("Committed = %v, %v; want a.txt uncommitted and missing.txt committed", got, err)
 	}
 }
 

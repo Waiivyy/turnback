@@ -434,7 +434,8 @@ func history(sh *shadow.Repo, t *store.Turn, turns []*store.Turn, path, current 
 }
 
 // markDirty flags files the undo would write whose current content is
-// neither recorded in the latest snapshot nor committed.
+// neither recorded in the latest snapshot nor committed, comparing content
+// rather than trusting git status.
 func (a *App) markDirty(sh *shadow.Repo, p *UndoPlan, turns []*store.Turn, current string) error {
 	if len(p.writes) == 0 || len(turns) == 0 {
 		return nil
@@ -447,12 +448,17 @@ func (a *App) markDirty(sh *shadow.Repo, p *UndoPlan, turns []*store.Turn, curre
 	for _, c := range unrecorded {
 		candidates = append(candidates, c.Path)
 	}
-	uncommitted, err := git.Uncommitted(a.Root, candidates)
+	committed, err := git.Committed(a.Root, candidates)
 	if err != nil {
 		return err
 	}
+	unrecordedPaths := make(map[string]bool, len(candidates))
+	for _, path := range candidates {
+		unrecordedPaths[path] = true
+	}
 	for i := range p.Files {
-		p.Files[i].Dirty = uncommitted[p.Files[i].Path] && p.Files[i].writes()
+		f := &p.Files[i]
+		f.Dirty = unrecordedPaths[f.Path] && !committed[f.Path] && f.writes()
 	}
 	return nil
 }
