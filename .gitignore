@@ -19,3 +19,6 @@ coverage.*
 *.swp
 *~
 .DS_Store
+
+# Release notes written by scripts/build-release.sh
+/release-notes.md
