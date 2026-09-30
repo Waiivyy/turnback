@@ -326,6 +326,9 @@ func printTurn(env *Env, t *store.Turn, shown []store.File, now time.Time) {
 	if t.Agent != "" {
 		fmt.Fprintf(env.Stdout, "Agent     %s\n", shownText(t.Agent))
 	}
+	if t.Commit != "" {
+		fmt.Fprintf(env.Stdout, "Commit    %s\n", shortID(t.Commit))
+	}
 	if u := t.Undoes; u != nil {
 		line := fmt.Sprintf("Undoes    turn %d", u.Turn)
 		if len(u.Paths) > 0 {
@@ -341,6 +344,14 @@ func printTurn(env *Env, t *store.Turn, shown []store.File, now time.Time) {
 	}
 	added, deleted := t.Lines()
 	fmt.Fprintf(env.Stdout, "%s changed, +%d -%d\n", plural(len(t.Files), "file"), added, deleted)
+}
+
+// shortID abbreviates a commit id the way git usually shows it.
+func shortID(id string) string {
+	if len(id) > 7 {
+		return id[:7]
+	}
+	return id
 }
 
 // took describes how long a turn was recorded for.

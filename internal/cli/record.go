@@ -141,7 +141,8 @@ func runStatus(env *Env, args []string) error {
 	}
 	now := env.Now()
 	if !st.Initialized {
-		fmt.Fprintln(env.Stdout, "Nothing recorded in this repository yet. Start a turn with 'turnback start'.")
+		fmt.Fprintln(env.Stdout, "Nothing recorded in this repository yet. Start a turn with 'turnback start',")
+		fmt.Fprintln(env.Stdout, "or record one at every commit with 'turnback hook install'.")
 		return nil
 	}
 	if s := st.Session; s != nil {
@@ -159,6 +160,9 @@ func runStatus(env *Env, args []string) error {
 		fmt.Fprintln(env.Stdout, "Run 'turnback end' to record the turn.")
 	} else {
 		fmt.Fprintln(env.Stdout, "Not recording. Start a turn with 'turnback start'.")
+	}
+	if a.HookInstalled() {
+		fmt.Fprintln(env.Stdout, "Every commit records a turn (post-commit hook installed).")
 	}
 	if st.Latest != nil {
 		fmt.Fprintf(env.Stdout, "%s recorded. Latest: turn %d, %s (%s).\n",
