@@ -169,6 +169,19 @@ func (a *App) plan(sh *shadow.Repo, t *store.Turn, current string, limit []strin
 		now[c.Path], changedSince[c.Path] = c.New, true
 	}
 
+	// A path missing from the current snapshot may be deleted, or ignored
+	// by git by now; git says which. Ignored paths are never written.
+	var absent []string
+	for _, c := range changes {
+		if cur := c.New; (changedSince[c.Path] && now[c.Path] == nil) || (!changedSince[c.Path] && cur == nil) {
+			absent = append(absent, c.Path)
+		}
+	}
+	ignored, err := git.Ignored(a.Root, absent)
+	if err != nil {
+		return nil, err
+	}
+
 	// Pass 1: decide what to do with each file on its own.
 	targets := make(map[string]*shadow.Entry)
 	for _, c := range changes {
@@ -177,8 +190,7 @@ func (a *App) plan(sh *shadow.Repo, t *store.Turn, current string, limit []strin
 			cur = now[c.Path]
 		}
 		f := UndoFile{Path: c.Path}
-		if cur == nil && a.fileOnDisk(c.Path) {
-			// A file on disk that is not in the snapshot: git ignores it now.
+		if ignored[c.Path] {
 			f.Action, f.Reason = UndoSkip, "git ignores it now, and turnback leaves ignored files alone"
 			p.Files = append(p.Files, f)
 			continue
@@ -198,9 +210,13 @@ func (a *App) plan(sh *shadow.Repo, t *store.Turn, current string, limit []strin
 	if err := a.checkRoom(sh, p, targets, current); err != nil {
 		return nil, err
 	}
+	listings := make(map[string][]string) // folder listings, read once each
 	for i := range p.Files {
 		f := &p.Files[i]
-		if name := a.spelledOnDisk(f.Path); f.Action == UndoConflict && name != "" {
+		if f.Action != UndoConflict {
+			continue
+		}
+		if name := a.spelledOnDisk(f.Path, listings); name != "" {
 			f.Reason += fmt.Sprintf(" (on disk it is spelled %s, and this file system does not tell names apart by case)", name)
 		}
 	}
@@ -325,24 +341,23 @@ func decide(sh *shadow.Repo, t *store.Turn, f *UndoFile, before, after, cur *sha
 	return target, nil
 }
 
-// fileOnDisk reports whether a file or symlink (not a folder) exists at a
-// repository path.
-func (a *App) fileOnDisk(path string) bool {
-	fi, err := os.Lstat(filepath.Join(a.Root, filepath.FromSlash(path)))
-	return err == nil && !fi.IsDir()
-}
-
 // spelledOnDisk returns the name a file really has on disk when it differs
 // from path only by case, as it can on case-insensitive file systems.
-func (a *App) spelledOnDisk(path string) string {
+// listings caches folder contents across calls.
+func (a *App) spelledOnDisk(path string, listings map[string][]string) string {
 	dir, base := filepath.Split(filepath.Join(a.Root, filepath.FromSlash(path)))
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return ""
+	entries, ok := listings[dir]
+	if !ok {
+		if list, err := os.ReadDir(dir); err == nil {
+			for _, e := range list {
+				entries = append(entries, e.Name())
+			}
+		}
+		listings[dir] = entries
 	}
-	for _, e := range entries {
-		if e.Name() != base && strings.EqualFold(e.Name(), base) {
-			return e.Name()
+	for _, name := range entries {
+		if name != base && strings.EqualFold(name, base) {
+			return name
 		}
 	}
 	return ""
@@ -369,13 +384,9 @@ func isBinary(b []byte) bool {
 // not remove stands where the file must go.
 func (a *App) checkRoom(sh *shadow.Repo, p *UndoPlan, targets map[string]*shadow.Entry, current string) error {
 	var restores []int
-	removed := make(map[string]bool)
 	for i, f := range p.Files {
 		if f.Action == UndoRestore {
 			restores = append(restores, i)
-		}
-		if f.writes() && targets[f.Path] == nil {
-			removed[f.Path] = true
 		}
 	}
 	if len(restores) == 0 {
@@ -385,66 +396,95 @@ func (a *App) checkRoom(sh *shadow.Repo, p *UndoPlan, targets map[string]*shadow
 	if err != nil {
 		return err
 	}
-	tracked := make(map[string]bool, len(list))
+	room := &roomCheck{
+		root:    a.Root,
+		tracked: make(map[string]bool, len(list)),
+		folded:  make(map[string][]string, len(list)),
+		removed: make(map[string]bool),
+		holds:   make(map[string]bool),
+	}
 	for _, path := range list {
-		tracked[path] = true
+		room.tracked[path] = true
+		room.folded[strings.ToLower(path)] = append(room.folded[strings.ToLower(path)], path)
+	}
+	for _, f := range p.Files {
+		if f.writes() && targets[f.Path] == nil {
+			room.removed[f.Path] = true
+			parts := strings.Split(f.Path, "/")
+			for i := 1; i < len(parts); i++ {
+				room.holds[strings.Join(parts[:i], "/")] = true
+			}
+		}
 	}
 	for _, i := range restores {
 		f := &p.Files[i]
-		if reason := a.obstacle(f.Path, list, tracked, removed); reason != "" {
+		if reason := room.obstacle(f.Path); reason != "" {
 			f.Action, f.Reason = UndoConflict, reason
 		}
 	}
 	return nil
 }
 
+// roomCheck answers, for one plan, what stands where a file must come back.
+type roomCheck struct {
+	root    string
+	tracked map[string]bool     // paths in the current snapshot
+	folded  map[string][]string // tracked paths by lower-case spelling
+	removed map[string]bool     // paths this undo deletes
+	holds   map[string]bool     // folders that contain a path this undo deletes
+}
+
 // obstacle describes what stands where path must be created, or returns "".
-func (a *App) obstacle(path string, list []string, tracked, removed map[string]bool) string {
+func (rc *roomCheck) obstacle(path string) string {
 	parts := strings.Split(path, "/")
 	for i := 1; i < len(parts); i++ {
 		parent := strings.Join(parts[:i], "/")
-		if tracked[parent] && !removed[parent] {
+		if rc.tracked[parent] && !rc.removed[parent] {
 			return fmt.Sprintf("cannot bring it back: %s is a file now", parent)
 		}
-		fi, err := os.Lstat(filepath.Join(a.Root, filepath.FromSlash(parent)))
-		if err == nil && !tracked[parent] && (!fi.IsDir() || fi.Mode()&os.ModeSymlink != 0) {
+		fi, err := os.Lstat(filepath.Join(rc.root, filepath.FromSlash(parent)))
+		if err == nil && !rc.tracked[parent] && (!fi.IsDir() || fi.Mode()&os.ModeSymlink != 0) {
 			return fmt.Sprintf("cannot bring it back: %s, which git does not track, is in the way", parent)
 		}
 	}
-	fi, err := os.Lstat(filepath.Join(a.Root, filepath.FromSlash(path)))
+	fi, err := os.Lstat(filepath.Join(rc.root, filepath.FromSlash(path)))
 	if err != nil {
 		return ""
 	}
-	if !fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
-		for _, other := range list {
-			if other != path && strings.EqualFold(other, path) && !removed[other] {
-				return fmt.Sprintf("cannot bring it back: %s is in the way, and this file system does not tell names apart by case", other)
-			}
+	if fi.IsDir() && fi.Mode()&os.ModeSymlink == 0 {
+		if !rc.clearable(path) {
+			return "cannot bring it back: a folder with that name is in the way"
 		}
-		return "cannot bring it back: a file git does not track, probably an ignored one, is in the way"
+		return ""
 	}
-	if !a.clearable(path, removed) {
-		return "cannot bring it back: a folder with that name is in the way"
+	// On a case-insensitive disk, what stands there may be the same file
+	// under another spelling. If this undo deletes it first, there is room.
+	var twins []string
+	for _, other := range rc.folded[strings.ToLower(path)] {
+		if other != path {
+			twins = append(twins, other)
+		}
 	}
-	return ""
+	for _, other := range twins {
+		if !rc.removed[other] {
+			return fmt.Sprintf("cannot bring it back: %s is in the way, and this file system does not tell names apart by case", other)
+		}
+	}
+	if len(twins) > 0 {
+		return ""
+	}
+	return "cannot bring it back: a file git does not track, probably an ignored one, is in the way"
 }
 
 // clearable reports whether the folder at path disappears once the undo
 // deletes the files it removes: every file in it must be a tracked file
 // the undo deletes, and every folder in it must hold at least one, because
 // git only removes folders it empties.
-func (a *App) clearable(path string, removed map[string]bool) bool {
-	holds := make(map[string]bool) // folders that contain a removed file
-	for r := range removed {
-		parts := strings.Split(r, "/")
-		for i := 1; i < len(parts); i++ {
-			holds[strings.Join(parts[:i], "/")] = true
-		}
-	}
-	if !holds[path] {
+func (rc *roomCheck) clearable(path string) bool {
+	if !rc.holds[path] {
 		return false
 	}
-	root := filepath.Join(a.Root, filepath.FromSlash(path))
+	root := filepath.Join(rc.root, filepath.FromSlash(path))
 	ok := true
 	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -456,7 +496,7 @@ func (a *App) clearable(path string, removed map[string]bool) bool {
 			return nil
 		}
 		rel = path + "/" + filepath.ToSlash(rel)
-		if d.IsDir() && !holds[rel] || !d.IsDir() && !removed[rel] {
+		if d.IsDir() && !rc.holds[rel] || !d.IsDir() && !rc.removed[rel] {
 			ok = false
 			return filepath.SkipAll
 		}

@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
@@ -130,4 +131,34 @@ func BlobID(content []byte, hexLen int) string {
 	fmt.Fprintf(h, "blob %d\x00", len(content))
 	h.Write(content)
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// Ignored returns the subset of paths (relative to root) that the
+// repository ignores now. Tracked files are never ignored, whatever the
+// patterns say, and on case-insensitive file systems a different spelling
+// of a tracked file counts as tracked, just as git sees it.
+func Ignored(root string, paths []string) (map[string]bool, error) {
+	out := make(map[string]bool)
+	if len(paths) == 0 {
+		return out, nil
+	}
+	var list bytes.Buffer
+	for _, p := range paths {
+		list.WriteString(p)
+		list.WriteByte(0)
+	}
+	res, err := (Runner{Dir: root}).RunInput(list.Bytes(), "check-ignore", "-z", "--stdin")
+	var gitErr *Error
+	if errors.As(err, &gitErr) && gitErr.ExitCode == 1 {
+		return out, nil // none of the paths is ignored
+	}
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range strings.Split(string(res), "\x00") {
+		if p != "" {
+			out[p] = true
+		}
+	}
+	return out, nil
 }

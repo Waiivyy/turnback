@@ -780,3 +780,92 @@ func TestACaseOnlyNameClashIsExplained(t *testing.T) {
 		t.Errorf("Makefile plan = %+v, want a conflict naming makefile and case", f)
 	}
 }
+
+// names lists the exact entry names in a folder.
+func names(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range entries {
+		out = append(out, e.Name())
+	}
+	return out
+}
+
+func TestUndoACaseOnlyRenameOfAFile(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	if !caseInsensitive(t, repo.Dir) {
+		t.Skip("only case-insensitive file systems need this")
+	}
+	repo.Write("Readme.md", "hello\n")
+	repo.Commit("initial")
+	a := openApp(t, repo)
+	turn(t, a, "Fix the name", func() { repo.Git("mv", "Readme.md", "README.md") })
+
+	p := planUndo(t, a, 1)
+	if got := actions(p); !reflect.DeepEqual(got, map[string]string{"README.md": app.UndoDelete, "Readme.md": app.UndoRestore}) {
+		t.Fatalf("actions = %v", got)
+	}
+	applyUndo(t, a, p, false)
+	if got := names(t, repo.Dir); !reflect.DeepEqual(got, []string{".git", ".turnback", "Readme.md"}) {
+		t.Errorf("repository root holds %q, want Readme.md back", got)
+	}
+	if got := repo.Read("Readme.md"); got != "hello\n" {
+		t.Errorf("Readme.md = %q", got)
+	}
+}
+
+func TestUndoACaseOnlyRenameOfAFolder(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	if !caseInsensitive(t, repo.Dir) {
+		t.Skip("only case-insensitive file systems need this")
+	}
+	repo.Write("src/Components/Button.tsx", "button\n")
+	repo.Write("src/Components/Card.tsx", "card\n")
+	repo.Commit("initial")
+	a := openApp(t, repo)
+	turn(t, a, "Lowercase the folder", func() {
+		repo.Git("mv", "src/Components", "src/tmp")
+		repo.Git("mv", "src/tmp", "src/components")
+	})
+
+	applyUndo(t, a, planUndo(t, a, 1), false)
+	if got := names(t, repo.Path("src")); !reflect.DeepEqual(got, []string{"Components"}) {
+		t.Errorf("src/ holds %q, want Components back", got)
+	}
+	if repo.Read("src/Components/Button.tsx") != "button\n" || repo.Read("src/Components/Card.tsx") != "card\n" {
+		t.Error("the files did not come back intact")
+	}
+}
+
+func TestUndoDoesNotRestoreIntoAnIgnoredFolder(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write("dist/keep.txt", "k\n")
+	repo.Write("app.js", "v1\n")
+	repo.Commit("initial")
+	a := openApp(t, repo)
+	turn(t, a, "Stop shipping dist", func() {
+		repo.Git("rm", "-q", "dist/keep.txt")
+		repo.Write("app.js", "v2\n")
+	})
+	repo.Write(".gitignore", "dist/\n")
+	repo.Git("add", ".gitignore")
+	repo.Git("commit", "-q", "-m", "ignore dist")
+
+	p := planUndo(t, a, 1)
+	if f := planned(t, p, "dist/keep.txt"); f.Action != app.UndoSkip || !strings.Contains(f.Reason, "ignores it") {
+		t.Errorf("dist/keep.txt plan = %+v, want it skipped because dist/ is ignored now", f)
+	}
+	u := applyUndo(t, a, p, false)
+	if repo.Exists("dist/keep.txt") || repo.Read("app.js") != "v1\n" {
+		t.Errorf("dist/keep.txt exists = %v, app.js = %q", repo.Exists("dist/keep.txt"), repo.Read("app.js"))
+	}
+	// And the undo itself undoes cleanly.
+	applyUndo(t, a, planUndo(t, a, u.ID), false)
+	if repo.Read("app.js") != "v2\n" {
+		t.Errorf("after undoing the undo app.js = %q", repo.Read("app.js"))
+	}
+}
