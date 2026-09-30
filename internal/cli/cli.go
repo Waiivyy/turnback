@@ -174,16 +174,27 @@ func report(env *Env, err error) int {
 		return 1
 	}
 	var ce *cliError
-	// Messages can carry file names; control characters in them are escaped.
 	if errors.As(err, &ce) {
-		fmt.Fprintf(env.Stderr, "turnback: %s\n", shownText(ce.msg))
+		fmt.Fprintf(env.Stderr, "turnback: %s\n", shownLines(ce.msg))
 		for _, h := range ce.hints {
-			fmt.Fprintf(env.Stderr, "hint: %s\n", shownText(h))
+			fmt.Fprintf(env.Stderr, "hint: %s\n", shownLines(h))
 		}
 		return ce.code
 	}
-	fmt.Fprintf(env.Stderr, "turnback: %s\n", shownText(err.Error()))
+	fmt.Fprintf(env.Stderr, "turnback: %s\n", shownLines(err.Error()))
 	return 1
+}
+
+// shownLines prepares a message for the terminal. Messages can carry file
+// names and git's own output, so control characters are escaped, except
+// line breaks: those start an indented line, as git's errors often run
+// over several lines.
+func shownLines(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = shownText(line)
+	}
+	return strings.Join(lines, "\n  ")
 }
 
 // parseFlags parses args with fs and returns the positional arguments.

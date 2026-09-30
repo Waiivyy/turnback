@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -55,5 +57,16 @@ func TestNoArgumentsPrintsUsage(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Usage:") {
 		t.Errorf("stdout = %q, want usage text", stdout)
+	}
+}
+
+func TestMultiLineErrorsStayReadable(t *testing.T) {
+	var stderr bytes.Buffer
+	env := &Env{Stdout: io.Discard, Stderr: &stderr}
+	report(env, errors.New("git checkout-index: error: open(\"secret.txt\"): Permission denied\nfatal: cannot create secret.txt\x1b[31m"))
+	want := "turnback: git checkout-index: error: open(\"secret.txt\"): Permission denied\n" +
+		"  fatal: cannot create secret.txt\\x1b[31m\n"
+	if stderr.String() != want {
+		t.Errorf("stderr =\n%q\nwant\n%q", stderr.String(), want)
 	}
 }
