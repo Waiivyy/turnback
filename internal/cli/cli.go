@@ -243,8 +243,3 @@ func noArguments(name string, positional []string) error {
 	}
 	return nil
 }
-
-func isTerminal(f *os.File) bool {
-	fi, err := f.Stat()
-	return err == nil && fi.Mode()&os.ModeCharDevice != 0
-}
