@@ -394,11 +394,16 @@ turnback exists to fix mistakes, so it is built to never make new ones:
   yourself, survive the undo.
 - **Unsaved work is protected.** A file whose current changes are neither
   committed nor recorded is only rewritten with `--force`, and turnback saves
-  the current state first.
+  the current state first. This is decided by comparing content, so files
+  hidden from `git status` (skip-worktree) are covered too.
 - **Nothing git ignores is touched.** Not even when an ignored file, such as a
   `.env`, stands where a deleted file would come back: the undo stops instead.
 - **Fresh check before writing.** If a file changes while you are reading the
   preview, the undo stops rather than overwrite it.
+- **Verified writes.** After writing, turnback checks every file on disk. If
+  something did not land, for example in a folder that is not writable, it
+  puts everything back and tells you nothing changed. If even that fails, what
+  did change is recorded as a turn you can undo.
 - **Every undo can be undone**, because it is recorded as a turn.
 
 One limit to know: conflict detection works on text. If turn 3 calls a function
