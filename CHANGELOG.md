@@ -15,6 +15,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
   skipped, and existing or tool-managed hooks are never replaced.
 - `turnback show` names the commit that closed a commit turn, and
   `turnback status` says when commits record turns.
+- Turns without a description are described from their diff, naming the
+  functions and types they add, change or remove in Go, JavaScript and
+  TypeScript, Python, Rust and Ruby, as in "Add withRetry; update Get".
 - CI runs the tests on Windows too, and against git 2.30.0, the oldest
   version turnback supports.
 
