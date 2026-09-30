@@ -65,6 +65,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
   to the Windows download; and cannot run half of itself if its own download
   is cut short. Downloads from GitHub use HTTPS only.
 
+- Release archives carry a signed build provenance attestation, which
+  `gh attestation verify` checks.
+
 ### Changed
 
 - Building from source needs Go 1.24 or newer. Older Go versions leave out a

@@ -70,7 +70,10 @@ HTTPS only, checks its SHA-256 checksum and installs it to `~/.local/bin`,
 without root rights. It changes nothing unless the checksum matches. If that
 folder is not on your `PATH` yet, the script prints the line to add.
 Set `TURNBACK_INSTALL_DIR` to put it elsewhere, or `TURNBACK_VERSION=v0.1.0`
-to pin a version.
+to pin a version. Releases published after v0.1.0 also carry a signed build
+provenance attestation, so you can check that an archive was built by this
+repository's release workflow:
+`gh attestation verify turnback_linux_amd64.tar.gz --repo Waiivyy/turnback`.
 
 **Windows**, or by hand: download the archive for your system from the
 [releases page](https://github.com/Waiivyy/turnback/releases/latest), unpack
