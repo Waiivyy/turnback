@@ -47,6 +47,26 @@ Everything lives in `.turnback/` at the root of the working tree:
 
 Deleting the folder removes every trace of turnback from the repository.
 
+## Commit turns
+
+With `turnback hook install`, a post-commit hook records a turn at every
+commit, so nobody has to remember `start` and `end`.
+
+- A checkpoint, `refs/turnback/checkpoint` in the private repository, marks
+  where the next commit turn starts. At each commit the hook snapshots the
+  working tree, records everything that changed since the checkpoint as a
+  turn named after the commit's subject line, and moves the checkpoint.
+  Every other recorded turn, from `end` or `undo`, moves it too, so nothing
+  is recorded twice.
+- While `start` and `end` are recording a turn, commits do not close turns;
+  the explicit turn wins. During a rebase nothing is recorded, because the
+  working tree jumps between commits.
+- turnback never replaces a hook it did not write, and leaves hooks alone
+  that a tool manages through `core.hooksPath`. The hook it writes never
+  makes a commit fail and does nothing when it is already running inside
+  itself.
+- The checkpoint only exists while the hook is installed.
+
 ## Snapshots
 
 `.turnback/git` is a private git repository whose work tree is your working
