@@ -16,6 +16,13 @@ import (
 // ErrNoTurns means nothing has been recorded yet.
 var ErrNoTurns = errors.New("no turns recorded yet")
 
+// InvalidTurnError means a turn reference is neither an id nor "last".
+type InvalidTurnError struct {
+	Ref string
+}
+
+func (e *InvalidTurnError) Error() string { return fmt.Sprintf("%q is not a turn id", e.Ref) }
+
 // NotInTurnError means a turn did not change any of the requested paths.
 type NotInTurnError struct {
 	Turn  *store.Turn
@@ -41,7 +48,7 @@ func (a *App) ResolveTurn(ref string) (*store.Turn, error) {
 	}
 	id, err := strconv.Atoi(ref)
 	if err != nil || id <= 0 {
-		return nil, fmt.Errorf("%q is not a turn id", ref)
+		return nil, &InvalidTurnError{Ref: ref}
 	}
 	return a.Store.Turn(id)
 }
@@ -109,8 +116,9 @@ func under(path, p string) bool {
 	return path == p || strings.HasPrefix(path, p+"/")
 }
 
-// matchingFiles returns the files of t that touch any of paths.
-func matchingFiles(t *store.Turn, paths []string) []store.File {
+// FilesTouching returns the files of t that are, or lie under, any of
+// paths. A rename matches by its old or its new name.
+func FilesTouching(t *store.Turn, paths []string) []store.File {
 	var out []store.File
 	for _, f := range t.Files {
 		for _, p := range paths {
@@ -141,7 +149,7 @@ func (a *App) Log(opts LogOptions) ([]*store.Turn, error) {
 		if !opts.Since.IsZero() && t.EndedAt.Before(opts.Since) {
 			continue
 		}
-		if len(opts.Paths) > 0 && len(matchingFiles(t, opts.Paths)) == 0 {
+		if len(opts.Paths) > 0 && len(FilesTouching(t, opts.Paths)) == 0 {
 			continue
 		}
 		out = append(out, t)
@@ -158,7 +166,7 @@ func (a *App) Log(opts LogOptions) ([]*store.Turn, error) {
 func (a *App) Diff(t *store.Turn, paths []string) (string, error) {
 	var pathspec []string
 	if len(paths) > 0 {
-		files := matchingFiles(t, paths)
+		files := FilesTouching(t, paths)
 		if len(files) == 0 {
 			return "", &NotInTurnError{Turn: t, Paths: paths}
 		}

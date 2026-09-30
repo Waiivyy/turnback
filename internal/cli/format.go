@@ -14,12 +14,14 @@ import (
 
 // ANSI styles, used only when Env.Color is set.
 const (
-	reset  = "\x1b[0m"
-	bold   = "\x1b[1m"
-	red    = "\x1b[31m"
-	green  = "\x1b[32m"
-	yellow = "\x1b[33m"
-	cyan   = "\x1b[36m"
+	reset      = "\x1b[0m"
+	bold       = "\x1b[1m"
+	dim        = "\x1b[2m"
+	boldYellow = "\x1b[1;33m"
+	red        = "\x1b[31m"
+	green      = "\x1b[32m"
+	yellow     = "\x1b[33m"
+	cyan       = "\x1b[36m"
 )
 
 func (e *Env) paint(style, s string) string {
@@ -115,6 +117,20 @@ func explain(env *Env, err error) error {
 			withHint("Run 'turnback end' to record it, or 'turnback end --discard' to drop it.")
 	case errors.Is(err, store.ErrLocked):
 		return errorf("%v", err)
+	case errors.Is(err, store.ErrTurnNotFound):
+		return errorf("%v", err).withHint("Run 'turnback log' to see the recorded turns.")
+	case errors.Is(err, app.ErrNoTurns):
+		return errorf("no turns recorded yet").
+			withHint("Record one with 'turnback start' and 'turnback end'.")
+	}
+	var invalid *app.InvalidTurnError
+	if errors.As(err, &invalid) {
+		return usageErrorf("%v", err).withHint("Turn ids are the numbers 'turnback log' shows, or 'last'.")
+	}
+	var notIn *app.NotInTurnError
+	if errors.As(err, &notIn) {
+		return errorf("%v", err).
+			withHint(fmt.Sprintf("Run 'turnback show %d --stat' to see the files it changed.", notIn.Turn.ID))
 	}
 	return err
 }

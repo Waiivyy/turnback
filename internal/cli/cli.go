@@ -37,6 +37,7 @@ type Env struct {
 	Now         func() time.Time // clock used for timestamps
 	Color       bool             // colorize output with ANSI escapes
 	Interactive bool             // stdin is a terminal, so prompts are allowed
+	Pager       string           // shell command to page long output through, or ""
 }
 
 // Main runs turnback with the process's arguments and terminal and returns
@@ -56,6 +57,9 @@ func Main() int {
 		Color:       isTerminal(os.Stdout) && os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb",
 		Interactive: isTerminal(os.Stdin),
 	}
+	if isTerminal(os.Stdout) {
+		env.Pager = pagerCommand()
+	}
 	return Run(env, os.Args[1:])
 }
 
@@ -71,7 +75,7 @@ type command struct {
 var commands []*command
 
 func init() {
-	commands = []*command{startCommand, endCommand, statusCommand}
+	commands = []*command{startCommand, endCommand, statusCommand, logCommand, showCommand}
 }
 
 func lookup(name string) *command {
