@@ -50,7 +50,10 @@ Deleting the folder removes every trace of turnback from the repository.
 Commands that change state take an operating system lock on `lock` (`flock`
 on Unix, `LockFileEx` on Windows), so it is released the moment its holder
 exits, even if it crashes. The file stays in place and holds the pid of the
-last holder, which a waiting command names.
+last holder, which a waiting command names. On a file system that cannot
+lock files, such as NFS without a lock service, and on platforms without
+file locking, commands run without the lock, so two of them must not run at
+the same time there.
 
 The folder is only ever created by turnback, so turnback refuses anything
 there it did not make. If git tracks a path inside `.turnback/`, in any
@@ -248,6 +251,10 @@ page draws long diffs a part at a time, so a huge turn cannot freeze it.
 - With `core.symlinks=false`, the default in Git for Windows, git writes a
   symbolic link as a plain file. An undo that must bring a link back then
   stops and changes nothing.
+- On a case-insensitive disk, undoing a case-only rename of a folder brings
+  every file back but can keep the folder's new spelling. turnback never
+  changes the index either, so after undoing any case-only rename, git may
+  still record the new spelling; check `git status` before committing.
 - The first snapshot copies the content of every file into `.turnback/git`,
   so it costs disk space in proportion to the working tree. Later snapshots
   store only files that changed.
