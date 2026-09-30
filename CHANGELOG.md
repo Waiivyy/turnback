@@ -7,6 +7,17 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `turnback hook install` and `turnback hook uninstall`: a post-commit hook
+  that records a turn at every commit, named after the commit, so nobody has
+  to remember `start` and `end`. Explicit turns take precedence, rebases are
+  skipped, and existing or tool-managed hooks are never replaced.
+- `turnback show` names the commit that closed a commit turn, and
+  `turnback status` says when commits record turns.
+- CI runs the tests on Windows too, and against git 2.30.0, the oldest
+  version turnback supports.
+
 ## [0.1.0] - 2026-09-30
 
 First release.
