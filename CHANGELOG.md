@@ -14,8 +14,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
   It is a dry run by default, asks for confirmation in a terminal, and supports
   `--yes`, `--dry-run`, `--file` and `--force`. If any file conflicts, nothing
   is written and the overlapping lines and later turns are shown. Files with
-  unsaved changes are only rewritten with `--force`, ignored files are never
-  overwritten, and every undo is recorded as a turn so it can be undone.
+  unsaved changes, compared by content, are only rewritten with `--force`,
+  ignored files are never read or overwritten, and every undo is recorded as
+  a turn so it can be undone. Every write is verified on disk; an undo that
+  cannot finish is rolled back, or recorded as a partial undo turn if even
+  that fails. Large turns work too: no file list is passed on a command line.
 - `turnback end` points to `show` and `undo` for the turn it just recorded.
 - `turnback log` lists turns newest first, filtered by `--since` (dates,
   times, durations, `today`, `yesterday`), `--file` (repeatable, relative to
@@ -29,8 +32,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
   `end --discard` stops recording without saving a turn.
 - Turns without a description get a short summary of the files they changed.
 - Private snapshot store in `.turnback/git`. It never writes to your
-  repository's history, index, refs or stash, honors your ignore rules and
-  stores exact file bytes.
+  repository's history, index, refs or stash, and stores exact file bytes.
+  Snapshots hold exactly what your repository tracks plus the untracked files
+  it does not ignore, so a file that becomes ignored is never read again and
+  force-added files that match an ignore pattern are recorded.
 - README with a demo, an example session, a command reference, a safety
   section and a FAQ.
 - CI on Linux and macOS with the oldest supported and the latest Go.
