@@ -174,14 +174,15 @@ func report(env *Env, err error) int {
 		return 1
 	}
 	var ce *cliError
+	// Messages can carry file names; control characters in them are escaped.
 	if errors.As(err, &ce) {
-		fmt.Fprintf(env.Stderr, "turnback: %s\n", ce.msg)
+		fmt.Fprintf(env.Stderr, "turnback: %s\n", shownText(ce.msg))
 		for _, h := range ce.hints {
-			fmt.Fprintf(env.Stderr, "hint: %s\n", h)
+			fmt.Fprintf(env.Stderr, "hint: %s\n", shownText(h))
 		}
 		return ce.code
 	}
-	fmt.Fprintf(env.Stderr, "turnback: %v\n", err)
+	fmt.Fprintf(env.Stderr, "turnback: %s\n", shownText(err.Error()))
 	return 1
 }
 

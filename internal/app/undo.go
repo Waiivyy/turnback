@@ -676,6 +676,7 @@ func (a *App) ApplyUndo(p *UndoPlan, force bool) (*store.Turn, error) {
 	// turnback ignores it, and git runs outside the terminal's process group.
 	signal.Ignore(os.Interrupt)
 	defer signal.Reset(os.Interrupt)
+	plain := sh
 	sh = sh.Uninterruptible()
 
 	if err := sh.Checkout(p.current, p.target); err != nil {
@@ -687,7 +688,7 @@ func (a *App) ApplyUndo(p *UndoPlan, force bool) (*store.Turn, error) {
 		partial, recErr := a.recordPartial(sh, p.Turn, p.Paths, before, err)
 		switch {
 		case recErr != nil:
-			return nil, fmt.Errorf("%w; recording what it changed failed too (%v). The state from before the undo is saved in .turnback/git as %s", err, recErr, pendingRef)
+			return nil, fmt.Errorf("%w; recording what it changed failed too (%v). %s", err, recErr, keepForRecovery(sh, before))
 		case partial == nil:
 			sh.DeleteRef(pendingRef)
 			return nil, &UndoAbortedError{Cause: err}
@@ -698,11 +699,25 @@ func (a *App) ApplyUndo(p *UndoPlan, force bool) (*store.Turn, error) {
 
 	u, err := a.recordUndo(sh, p, before, desc)
 	if err != nil {
-		return nil, fmt.Errorf("the undo was applied, but recording it failed: %w. The state from before the undo is saved in .turnback/git as %s", err, pendingRef)
+		return nil, fmt.Errorf("the undo was applied, but recording it failed: %w. %s", err, keepForRecovery(sh, before))
 	}
 	sh.DeleteRef(pendingRef)
-	sh.Tidy()
+	// Housekeeping may take a while and is safe to interrupt.
+	signal.Reset(os.Interrupt)
+	plain.Tidy()
 	return u, nil
+}
+
+// keepForRecovery keeps the state from before a failed undo under a ref of
+// its own, so the next undo cannot replace it, and says where it is.
+func keepForRecovery(sh *shadow.Repo, before string) string {
+	ref := "refs/turnback/unrecorded/" + before
+	if err := sh.SetRef(ref, before); err == nil {
+		sh.DeleteRef(pendingRef)
+	} else {
+		ref = pendingRef
+	}
+	return fmt.Sprintf("The state from before the undo is saved in .turnback/git as commit %s (%s)", before, ref)
 }
 
 // recordUndo records a finished undo as a turn, from the verified state of

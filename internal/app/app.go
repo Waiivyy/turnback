@@ -5,6 +5,8 @@ package app
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/Waiivyy/turnback/internal/git"
@@ -171,6 +173,9 @@ func (a *App) End(opts EndOptions) (*Ended, error) {
 	}
 
 	files := toFiles(changes)
+	if err := a.markIgnored(files); err != nil {
+		return nil, err
+	}
 	id, err := a.Store.NextTurnID()
 	if err != nil {
 		return nil, err
@@ -260,6 +265,27 @@ func (a *App) Status() (*Status, error) {
 	}
 	st.Pending = toFiles(changes)
 	return st, nil
+}
+
+// markIgnored flags deletions that are not deletions at all: files that
+// left the snapshot because git began ignoring them, and are still on disk.
+func (a *App) markIgnored(files []store.File) error {
+	var gone []string
+	for _, f := range files {
+		if f.Status == "D" {
+			if _, err := os.Lstat(filepath.Join(a.Root, filepath.FromSlash(f.Path))); err == nil {
+				gone = append(gone, f.Path)
+			}
+		}
+	}
+	ignored, err := git.Ignored(a.Root, gone)
+	if err != nil {
+		return err
+	}
+	for i := range files {
+		files[i].Ignored = files[i].Status == "D" && ignored[files[i].Path]
+	}
+	return nil
 }
 
 func toFiles(changes []shadow.Change) []store.File {

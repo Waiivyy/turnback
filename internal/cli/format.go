@@ -58,6 +58,9 @@ func printFiles(env *Env, files []store.File) {
 }
 
 func lineCounts(env *Env, f store.File) string {
+	if f.Ignored {
+		return "now ignored by git, still on disk"
+	}
 	if f.Binary {
 		return "binary"
 	}

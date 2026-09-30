@@ -10,6 +10,13 @@ import (
 
 var verbs = map[string]string{"A": "Add", "M": "Update", "D": "Delete", "R": "Rename", "T": "Update"}
 
+func verbFor(f store.File) string {
+	if f.Ignored {
+		return "Stop tracking"
+	}
+	return verb(f.Status)
+}
+
 func verb(status string) string {
 	if v, ok := verbs[status]; ok {
 		return v
@@ -28,11 +35,11 @@ func Summarize(files []store.File) string {
 		if f.Status == "R" {
 			return fmt.Sprintf("Rename %s to %s", f.OldPath, f.Path)
 		}
-		return verb(f.Status) + " " + f.Path
+		return verbFor(f) + " " + f.Path
 	}
-	v := verb(files[0].Status)
+	v := verbFor(files[0])
 	for _, f := range files[1:] {
-		if verb(f.Status) != v {
+		if verbFor(f) != v {
 			v = "Change"
 			break
 		}

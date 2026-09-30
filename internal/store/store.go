@@ -109,6 +109,7 @@ type File struct {
 	Added   int    `json:"added"`
 	Deleted int    `json:"deleted"`
 	Binary  bool   `json:"binary,omitempty"`
+	Ignored bool   `json:"ignored,omitempty"` // left the turn's view because git began ignoring it; still on disk
 }
 
 // UndoInfo records what an undo turn reverted.

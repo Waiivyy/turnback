@@ -309,3 +309,40 @@ func execIn(dir string, args ...string) (string, error) {
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
+
+func TestErrorMessagesEscapeFileNames(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not allow control characters in file names")
+	}
+	repo := testutil.NewRepo(t)
+	name := "n\x1b[2Kotes.txt"
+	repo.Write(name, "1\n2\n3\n4\n5\n6\n")
+	repo.Commit("initial")
+	record(t, repo, "Edit line 2", func() { repo.Write(name, "1\nTWO\n3\n4\n5\n6\n") })
+	repo.Write(name, "1\nTWO\n3\n4\n5\nSIX, not saved\n") // triggers the unsaved-work refusal
+	_, _, stderr := run(t, repo.Dir, "undo", "1", "--yes")
+	if strings.Contains(stderr, "\x1b") || !strings.Contains(stderr, `\x1b[2Kotes.txt`) {
+		t.Errorf("stderr = %q, want the name escaped", stderr)
+	}
+}
+
+func TestAFileThatBecomesIgnoredIsNotShownAsDeleted(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write(".env", "TOKEN=1\n") // untracked and not ignored yet
+	repo.Write("app.js", "v1\n")
+	repo.Git("add", "app.js")
+	repo.Git("commit", "-q", "-m", "initial")
+	run(t, repo.Dir, "start", "-m", "Keep secrets out of git")
+	repo.Write(".gitignore", ".env\n")
+	code, stdout, stderr := run(t, repo.Dir, "end")
+	if code != 0 {
+		t.Fatalf("end: exit %d, %s", code, stderr)
+	}
+	if !strings.Contains(stdout, ".env        now ignored by git, still on disk") {
+		t.Errorf("end output:\n%s", stdout)
+	}
+	_, show, _ := run(t, repo.Dir, "show", "1", "--stat")
+	if !strings.Contains(show, "now ignored by git, still on disk") {
+		t.Errorf("show output:\n%s", show)
+	}
+}
