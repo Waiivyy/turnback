@@ -406,3 +406,54 @@ func TestStaleLocksAreClearedAndFreshOnesKept(t *testing.T) {
 		t.Errorf("Snapshot after clearing the locks: %v", err)
 	}
 }
+
+func TestTheFirstSnapshotCopiesCommittedFilesAsOnePack(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	for i := 0; i < 50; i++ {
+		repo.Write(fmt.Sprintf("src/file%02d.txt", i), fmt.Sprintf("content %d\n", i))
+	}
+	repo.Commit("initial")
+	repo.Write("src/file07.txt", "edited\n") // one file differs from the index
+	r, gitDir := open(t, repo)
+	tree, err := r.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loose := 0
+	for _, dir := range listDirs(t, filepath.Join(gitDir, "objects")) {
+		if len(dir) == 2 {
+			entries, _ := os.ReadDir(filepath.Join(gitDir, "objects", dir))
+			loose += len(entries)
+		}
+	}
+	// The edited file and the trees are new; the 49 committed files come
+	// from the pack.
+	if loose > 5 {
+		t.Errorf("%d loose objects after the first snapshot, want the committed files packed", loose)
+	}
+	listed := repo.Git("--git-dir="+gitDir, "ls-tree", "-r", tree)
+	if !strings.Contains(listed, "src/file49.txt") {
+		t.Fatalf("snapshot misses files:\n%s", listed)
+	}
+	if got := repo.Git("--git-dir="+gitDir, "cat-file", "-p", tree+":src/file07.txt"); got != "edited" {
+		t.Errorf("src/file07.txt in the snapshot = %q, want the file on disk", got)
+	}
+	if got := repo.Git("--git-dir="+gitDir, "cat-file", "-p", tree+":src/file08.txt"); got != "content 8" {
+		t.Errorf("src/file08.txt in the snapshot = %q", got)
+	}
+}
+
+func listDirs(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() {
+			out = append(out, e.Name())
+		}
+	}
+	return out
+}

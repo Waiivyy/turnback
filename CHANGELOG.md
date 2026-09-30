@@ -48,6 +48,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
   process killed midway left a lock file that made every later command fail.
   Partly written files are now removed, and turnback clears the locks its
   own git commands leave behind.
+- The first snapshot in a repository copies the committed files from git's
+  own store as one pack instead of writing them one by one. In a repository
+  of 30,000 files, `turnback start` went from 24 seconds to 4, and the
+  `turnback end` after it from nearly 3 minutes, spent packing those files,
+  to a third of a second.
 - Finding the files git ignores no longer searches the whole index once per
   file. A dry run for a turn that deleted 20,000 of 30,000 files went from
   about 4 seconds to under half a second.

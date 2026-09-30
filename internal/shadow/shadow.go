@@ -181,6 +181,9 @@ func (r *Repo) Snapshot() (string, error) {
 			return "", fmt.Errorf("snapshot: %w", err)
 		}
 	}
+	if _, err := os.Stat(filepath.Join(r.gitDir, "index")); errors.Is(err, fs.ErrNotExist) {
+		r.seed()
+	}
 	// Add or refresh the rest. Unchanged files are skipped by their stat
 	// data, files missing from disk are removed, and --replace lets a file
 	// take the place of a folder's entries and the other way round.
@@ -207,6 +210,47 @@ func (r *Repo) Snapshot() (string, error) {
 		}
 	}
 	return tree, nil
+}
+
+// seed copies the files the user's index holds into this repository as a
+// single pack, before the first snapshot. The snapshot then only has to
+// hash them: written one by one as loose objects, a repository of 30,000
+// files took half a minute, and packing them afterwards took minutes more.
+// Seeding is only a shortcut, so it gives up quietly, and it never runs in
+// a partial clone, where reading a missing object would fetch it.
+func (r *Repo) seed() {
+	user := git.Runner{Dir: r.root}.With("GIT_NO_LAZY_FETCH=1")
+	if out, _ := user.Run("config", "--get", "extensions.partialclone"); strings.TrimSpace(out) != "" {
+		return
+	}
+	theirs, err := user.Run("rev-parse", "--show-object-format")
+	if err != nil {
+		return
+	}
+	ours, err := r.run.Run("rev-parse", "--show-object-format")
+	if err != nil || strings.TrimSpace(ours) != strings.TrimSpace(theirs) {
+		return
+	}
+	staged, err := user.Run("ls-files", "-z", "--stage")
+	if err != nil {
+		return
+	}
+	seen := make(map[string]bool)
+	var ids bytes.Buffer
+	for _, entry := range splitNUL(staged) {
+		fields := strings.Fields(strings.SplitN(entry, "\t", 2)[0]) // mode, id, stage
+		if len(fields) < 2 || fields[0] == "160000" || seen[fields[1]] {
+			continue
+		}
+		seen[fields[1]] = true
+		ids.WriteString(fields[1] + "\n")
+	}
+	if ids.Len() == 0 {
+		return
+	}
+	// --window=0 skips the search for deltas, which is what made packing
+	// slow; deltas already stored in the user's packs are reused.
+	user.RunInput(ids.Bytes(), "pack-objects", "-q", "--window=0", filepath.Join(r.gitDir, "objects", "pack", "pack"))
 }
 
 // members lists the paths a snapshot must hold, as the user's repository
