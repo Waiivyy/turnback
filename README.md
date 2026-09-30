@@ -305,6 +305,7 @@ hint: Undo the later turns first, or leave the conflicting files out and undo th
 | `turnback log` | List recorded turns, newest first |
 | `turnback show [<turn>]` | Show a turn's details, files and diff; the latest turn by default |
 | `turnback undo <turn>` | Take one turn back out, or some of its files, keeping everything after it |
+| `turnback hook install` | Record a turn at every commit instead of wrapping turns in `start` and `end` |
 
 `<turn>` is an id from `turnback log`, or `last`. `turnback help <command>`
 lists every option; these are the ones you will use most.
@@ -359,7 +360,43 @@ In a terminal, long output is paged through `less` and diffs are colored. Use
 `--no-pager` or `PAGER=cat` to turn paging off, and `NO_COLOR=1` to turn colors
 off.
 
-## Using it with your agent
+## Record turns automatically
+
+### At every commit
+
+If you or your agent commit after each task, let every commit mark a turn:
+
+```console
+$ turnback hook install
+Installed a post-commit hook in .git/hooks/post-commit. From now on, every commit records a turn.
+Remove it with 'turnback hook uninstall'.
+
+$ git add -A && git commit -q -m "Tighten the rate limit"
+turnback: recorded turn 1 (2 files changed, +3 -1)
+
+$ turnback log
+ID  WHEN         FILES  CHANGES  DESCRIPTION
+ 1  today 20:25      2  +3 -1    Tighten the rate limit
+```
+
+Each commit closes a turn with everything that changed since the previous
+turn, named after the commit's subject line, and `turnback show` names the
+commit. Everything else works as usual, `undo` included. This suits agents
+that commit their own work, as Aider does by default.
+
+A few things to know:
+
+- Edits you make between commits land in the next commit's turn. When you
+  want your own edits kept apart from the agent's, wrap the agent's work in
+  `turnback start` and `turnback end` as well: while a turn is being
+  recorded that way, commits do not close turns.
+- turnback never replaces a hook it did not write. If the repository already
+  has a post-commit hook, or manages hooks with a tool through
+  `core.hooksPath`, `hook install` changes nothing and tells you to add one
+  line, `turnback hook post-commit`, to that hook yourself.
+- The hook never makes a commit fail, and it records nothing during a rebase.
+
+### From your agent's hooks
 
 turnback does not care which agent edits your files: run `turnback start`
 before you send a prompt and `turnback end` when the agent is done. Tag turns
@@ -367,8 +404,7 @@ with `--agent` if you switch between agents.
 
 If your agent or editor can run a shell command when a turn begins and when it
 ends, point those hooks at `turnback start` and `turnback end` and every turn
-is recorded without you thinking about it. A git-hook mode for tools without
-hooks is on the [roadmap](#roadmap).
+is recorded without you thinking about it.
 
 ## How it works
 
@@ -464,6 +500,14 @@ original changes back.
 </details>
 
 <details>
+<summary><strong>Does the commit hook slow down my commits?</strong></summary>
+
+Barely. Each commit takes one snapshot, and a snapshot only re-reads files
+whose size or modification time changed since the last one.
+
+</details>
+
+<details>
 <summary><strong>Does it send my code anywhere?</strong></summary>
 
 No. turnback never opens a network connection. Everything it records stays in
@@ -518,7 +562,7 @@ on macOS and Linux. Reports from Windows users are very welcome.
 - [x] Inspect turns with `log` and `show`
 - [x] Selective undo of a turn or a single file, with a dry run, conflict
       detection and undo of an undo
-- [ ] Automatic recording through a git hook
+- [x] Automatic recording at every commit, through a git hook
 - [ ] Local web UI for browsing turns
 - [ ] Smarter automatic descriptions
 - [x] Prebuilt binaries and a one-line install script
