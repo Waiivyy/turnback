@@ -81,34 +81,15 @@ func Open(root, gitDir string) (*Repo, error) {
 	return r, nil
 }
 
-// syncSettings copies the user's ignore rules into the private repository
-// and returns the global options every private git command runs with.
+// syncSettings prepares the private repository and returns the global
+// options every private git command runs with. Which files a snapshot holds
+// is decided by the user's repository (see Snapshot), so the private
+// repository needs no ignore rules of its own.
 func (r *Repo) syncSettings() ([]string, error) {
-	user := git.Runner{Dir: r.root}
-	var excludes bytes.Buffer
-	excludes.WriteString("# Rebuilt by turnback on every run from the repository's info/exclude.\n")
-	if out, err := user.Run("rev-parse", "--git-path", "info/exclude"); err == nil {
-		path := strings.TrimSpace(out)
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(r.root, path)
-		}
-		if b, err := os.ReadFile(path); err == nil {
-			excludes.Write(b)
-			excludes.WriteString("\n")
-		}
-	}
-	if r.ownDir != "" {
-		// Last, so no earlier negated pattern can re-include it.
-		excludes.WriteString("/" + r.ownDir + "/\n")
-	}
-	if err := writeIfChanged(filepath.Join(r.gitDir, "info", "exclude"), excludes.Bytes()); err != nil {
-		return nil, err
-	}
 	if err := writeIfChanged(filepath.Join(r.gitDir, "info", "attributes"), []byte(storeAttributes)); err != nil {
 		return nil, err
 	}
-
-	opts := []string{
+	return []string{
 		"--git-dir=" + r.gitDir,
 		"--work-tree=" + r.root,
 		// Paths are always literal: "src/[id].tsx" is a file, not a glob.
@@ -117,17 +98,8 @@ func (r *Repo) syncSettings() ([]string, error) {
 		"-c", "core.fsmonitor=false",
 		"-c", "core.autocrlf=false",
 		"-c", "core.quotePath=false",
-		"-c", "advice.addEmbeddedRepo=false",
 		"-c", "gc.autoDetach=false",
-	}
-	// core.excludesFile may be set in the user's repository config, which the
-	// private repository does not read.
-	if out, err := user.Run("config", "--type=path", "--get", "core.excludesFile"); err == nil {
-		if path := strings.TrimSpace(out); path != "" {
-			opts = append(opts, "-c", "core.excludesFile="+path)
-		}
-	}
-	return opts, nil
+	}, nil
 }
 
 // writeIfChanged replaces path atomically when its content differs, so a
@@ -157,10 +129,42 @@ func writeIfChanged(path string, content []byte) error {
 	return werr
 }
 
-// Snapshot records the current working tree (tracked files plus untracked
-// files that are not ignored) and returns the id of its tree.
+// Snapshot records the current working tree and returns the id of its tree.
+//
+// A snapshot holds exactly the files the user's repository tracks plus the
+// untracked files it does not ignore, by the user's own ignore rules. A file
+// that becomes ignored drops out of the next snapshot and is never read
+// again, and a tracked file that matches an ignore pattern stays in.
 func (r *Repo) Snapshot() (string, error) {
-	if _, err := r.run.Run("add", "--all"); err != nil {
+	members, err := r.members()
+	if err != nil {
+		return "", fmt.Errorf("snapshot: %w", err)
+	}
+	// Forget entries the user's repository no longer tracks or offers.
+	indexed, err := r.run.Run("ls-files", "-z")
+	if err != nil {
+		return "", fmt.Errorf("snapshot: %w", err)
+	}
+	var stale bytes.Buffer
+	for _, path := range splitNUL(indexed) {
+		if !members[path] {
+			stale.WriteString(path)
+			stale.WriteByte(0)
+		}
+	}
+	if stale.Len() > 0 {
+		if _, err := r.run.RunInput(stale.Bytes(), "update-index", "-z", "--force-remove", "--stdin"); err != nil {
+			return "", fmt.Errorf("snapshot: %w", err)
+		}
+	}
+	// Add or refresh the rest. Unchanged files are skipped by their stat
+	// data, and files missing from disk are removed.
+	var list bytes.Buffer
+	for _, path := range sortedKeys(members) {
+		list.WriteString(path)
+		list.WriteByte(0)
+	}
+	if _, err := r.run.RunInput(list.Bytes(), "update-index", "-z", "--add", "--remove", "--stdin"); err != nil {
 		return "", fmt.Errorf("snapshot: %w", err)
 	}
 	out, err := r.run.Run("write-tree")
@@ -174,10 +178,77 @@ func (r *Repo) Snapshot() (string, error) {
 			return "", fmt.Errorf("snapshot: %w", err)
 		}
 		if strings.TrimSpace(listed) != "" {
-			return "", fmt.Errorf("snapshot picked up turnback's own %s/ folder; check the ignore rules for it", r.ownDir)
+			return "", fmt.Errorf("snapshot picked up turnback's own %s/ folder", r.ownDir)
 		}
 	}
 	return tree, nil
+}
+
+// members lists the paths a snapshot must hold, as the user's repository
+// sees them: tracked files, including ones matching an ignore pattern, plus
+// untracked files that are not ignored. Nested repositories are included
+// as a pointer to their current commit when they have one.
+func (r *Repo) members() (map[string]bool, error) {
+	user := git.Runner{Dir: r.root}
+	staged, err := user.Run("ls-files", "-z", "--stage")
+	if err != nil {
+		return nil, err
+	}
+	others, err := user.Run("ls-files", "-z", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, err
+	}
+	members := make(map[string]bool)
+	add := func(path string) {
+		if path != "" && !r.isOwn(path) {
+			members[path] = true
+		}
+	}
+	for _, entry := range splitNUL(staged) {
+		meta, path, _ := strings.Cut(entry, "\t")
+		if strings.HasPrefix(meta, "160000 ") && !r.hasCommit(path) {
+			continue // a submodule that is not checked out
+		}
+		add(path)
+	}
+	for _, path := range splitNUL(others) {
+		if nested, ok := strings.CutSuffix(path, "/"); ok {
+			if r.hasCommit(nested) {
+				add(nested)
+			}
+			continue
+		}
+		add(path)
+	}
+	return members, nil
+}
+
+func (r *Repo) isOwn(path string) bool {
+	return r.ownDir != "" && (path == r.ownDir || strings.HasPrefix(path, r.ownDir+"/"))
+}
+
+// hasCommit reports whether the nested repository at path has a commit
+// checked out; git cannot record it otherwise.
+func (r *Repo) hasCommit(path string) bool {
+	dir := filepath.Join(r.root, filepath.FromSlash(path))
+	if _, err := os.Lstat(filepath.Join(dir, ".git")); err != nil {
+		return false
+	}
+	_, err := (git.Runner{Dir: dir}).Run("rev-parse", "--verify", "-q", "HEAD")
+	return err == nil
+}
+
+func splitNUL(s string) []string {
+	return strings.FieldsFunc(s, func(c rune) bool { return c == 0 })
+}
+
+func sortedKeys(m map[string]bool) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // Commit stores tree as a commit, with parent unless it is empty, and

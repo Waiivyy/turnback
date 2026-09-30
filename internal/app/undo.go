@@ -176,6 +176,12 @@ func (a *App) plan(sh *shadow.Repo, t *store.Turn, current string, limit []strin
 			cur = now[c.Path]
 		}
 		f := UndoFile{Path: c.Path}
+		if cur == nil && a.onDisk(c.Path) {
+			// Not in the snapshot but on disk: git ignores it now.
+			f.Action, f.Reason = UndoSkip, "git ignores it now, and turnback leaves ignored files alone"
+			p.Files = append(p.Files, f)
+			continue
+		}
 		target, err := decide(sh, t, &f, c.Old, c.New, cur)
 		if err != nil {
 			return nil, err
@@ -310,6 +316,12 @@ func decide(sh *shadow.Repo, t *store.Turn, f *UndoFile, before, after, cur *sha
 	}
 	f.Action = UndoMerge
 	return target, nil
+}
+
+// onDisk reports whether anything exists at a repository path.
+func (a *App) onDisk(path string) bool {
+	_, err := os.Lstat(filepath.Join(a.Root, filepath.FromSlash(path)))
+	return err == nil
 }
 
 // merge3 merges a file mode the way git does: keep a change made on one

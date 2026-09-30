@@ -463,11 +463,11 @@ func TestUndoNeverOverwritesAnIgnoredFile(t *testing.T) {
 	repo.Write("config.local", "SECRET=1\n")
 
 	p := planUndo(t, a, 1)
-	if f := planned(t, p, "config.local"); f.Action != app.UndoConflict || !strings.Contains(f.Reason, "in the way") {
-		t.Errorf("config.local plan = %+v", f)
+	if f := planned(t, p, "config.local"); f.Action != app.UndoSkip || !strings.Contains(f.Reason, "ignores it") {
+		t.Errorf("config.local plan = %+v, want it skipped because git ignores it now", f)
 	}
-	if _, err := a.ApplyUndo(p, true); err == nil {
-		t.Fatal("ApplyUndo succeeded")
+	if _, err := a.ApplyUndo(p, true); !errors.Is(err, app.ErrNothingToUndo) {
+		t.Errorf("ApplyUndo err = %v, want ErrNothingToUndo", err)
 	}
 	if got := repo.Read("config.local"); got != "SECRET=1\n" {
 		t.Errorf("config.local = %q, want it untouched", got)
@@ -617,5 +617,58 @@ func TestAnUndoThatCannotFinishChangesNothingAndLeavesNoTrace(t *testing.T) {
 	u := applyUndo(t, a, planUndo(t, a, 1), false)
 	if u.ID != 2 || repo.Read("ro/b.txt") != "b1\n" || repo.Exists("zz-notes.md") {
 		t.Errorf("retry: turn %d, ro/b.txt = %q, zz-notes.md exists = %v", u.ID, repo.Read("ro/b.txt"), repo.Exists("zz-notes.md"))
+	}
+}
+
+func TestUndoLeavesAFileAloneOnceGitIgnoresIt(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write("app.js", "v1\n")
+	repo.Git("add", "app.js")
+	repo.Git("commit", "-q", "-m", "initial")
+	repo.Write("config.local", "a\nb\nc\n") // untracked, not ignored yet
+	a := openApp(t, repo)
+	turn(t, a, "Tweak both", func() {
+		repo.Write("app.js", "v2\n")
+		repo.Write("config.local", "a\nB\nc\n")
+	})
+	repo.Write(".gitignore", "config.local\n")
+	repo.Write("config.local", "a\nB\nc\nSECRET=hunter2\n")
+	repo.Git("add", ".gitignore")
+	repo.Git("commit", "-q", "-m", "ignore config.local")
+
+	p := planUndo(t, a, 1)
+	if f := planned(t, p, "config.local"); f.Action != app.UndoSkip || !strings.Contains(f.Reason, "ignored") {
+		t.Errorf("config.local plan = %+v, want it skipped as ignored", f)
+	}
+	u := applyUndo(t, a, p, false)
+	if repo.Read("app.js") != "v1\n" {
+		t.Errorf("app.js = %q", repo.Read("app.js"))
+	}
+	if got := repo.Read("config.local"); got != "a\nB\nc\nSECRET=hunter2\n" {
+		t.Errorf("config.local = %q, want it untouched", got)
+	}
+	if listed := repo.Git("--git-dir=.turnback/git", "ls-tree", "-r", "--name-only", u.Before); strings.Contains(listed, "config.local") {
+		t.Errorf("the ignored file was read into the snapshot before the undo:\n%s", listed)
+	}
+}
+
+func TestUndoCoversTrackedFilesThatMatchAnIgnorePattern(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write(".gitignore", "*.lock\n")
+	repo.Write("deps.lock", "v1\n")
+	repo.Write("app.js", "v1\n")
+	repo.Git("add", "-f", "deps.lock")
+	repo.Commit("initial")
+	a := openApp(t, repo)
+	tr := turn(t, a, "Bump", func() {
+		repo.Write("deps.lock", "v2\n")
+		repo.Write("app.js", "v2\n")
+	})
+	if got := paths(tr.Files); !reflect.DeepEqual(got, []string{"M app.js", "M deps.lock"}) {
+		t.Errorf("turn files = %q, want deps.lock recorded too", got)
+	}
+	applyUndo(t, a, planUndo(t, a, 1), false)
+	if repo.Read("deps.lock") != "v1\n" || repo.Read("app.js") != "v1\n" {
+		t.Errorf("deps.lock = %q, app.js = %q", repo.Read("deps.lock"), repo.Read("app.js"))
 	}
 }

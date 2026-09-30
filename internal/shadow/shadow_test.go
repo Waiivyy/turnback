@@ -246,15 +246,74 @@ func TestCountFiles(t *testing.T) {
 	}
 }
 
-func TestSnapshotRefusesToStoreItsOwnFolder(t *testing.T) {
+func TestSnapshotNeverStoresItsOwnFolder(t *testing.T) {
 	repo := testutil.NewRepo(t)
-	// A work tree .gitignore outranks info/exclude, so this re-includes the
-	// folder holding the private repository.
+	// A work tree .gitignore that re-includes the folder holding the private
+	// repository must not make turnback snapshot itself.
 	repo.Write(".gitignore", "!/.turnback/\n")
-	r, _ := open(t, repo)
+	repo.Write("a.txt", "x\n")
+	r, gitDir := open(t, repo)
+	tree := snapshot(t, r)
+	for _, f := range files(t, repo, gitDir, tree) {
+		if strings.HasPrefix(f, ".turnback/") {
+			t.Fatalf("snapshot contains %s", f)
+		}
+	}
+}
 
-	_, err := r.Snapshot()
-	if err == nil || !strings.Contains(err.Error(), ".turnback/") {
-		t.Fatalf("Snapshot error = %v, want a refusal naming .turnback/", err)
+func TestAFileThatBecomesIgnoredLeavesTheSnapshot(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write("config.local", "token=old\n") // untracked and not ignored yet
+	r, gitDir := open(t, repo)
+	if got := files(t, repo, gitDir, snapshot(t, r)); !reflect.DeepEqual(got, []string{"config.local"}) {
+		t.Fatalf("first snapshot = %q", got)
+	}
+	repo.Write(".gitignore", "config.local\n")
+	repo.Write("config.local", "token=SECRET\n")
+	tree := snapshot(t, r)
+	if got := files(t, repo, gitDir, tree); !reflect.DeepEqual(got, []string{".gitignore"}) {
+		t.Errorf("snapshot after ignoring = %q, want only .gitignore", got)
+	}
+	// The new content was never read into the private repository.
+	if out, err := execGit(repo.Dir, "--git-dir="+gitDir, "grep", "-q", "SECRET", tree); err == nil {
+		t.Errorf("the ignored file's new content is in the snapshot: %s", out)
+	}
+}
+
+func TestSnapshotIncludesTrackedFilesThatMatchAnIgnorePattern(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write(".gitignore", "*.lock\n")
+	repo.Write("deps.lock", "v1\n")
+	repo.Git("add", "-f", "deps.lock")
+	repo.Commit("initial")
+	r, gitDir := open(t, repo)
+	before := snapshot(t, r)
+	if got := files(t, repo, gitDir, before); !reflect.DeepEqual(got, []string{".gitignore", "deps.lock"}) {
+		t.Fatalf("snapshot = %q, want the force-added deps.lock too", got)
+	}
+	repo.Write("deps.lock", "v2\n")
+	changes, err := r.Changes(before, snapshot(t, r))
+	if err != nil || len(changes) != 1 || changes[0].Path != "deps.lock" {
+		t.Errorf("changes = %+v, %v; want deps.lock modified", changes, err)
+	}
+}
+
+func TestANestedRepositoryWithoutCommitsDoesNotBreakSnapshots(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write("a.txt", "x\n")
+	if err := os.MkdirAll(repo.Path("web"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execGit(repo.Path("web"), "init", "-q"); err != nil {
+		t.Fatalf("git init web: %v %s", err, out)
+	}
+	repo.Write("web/index.html", "<h1>hi</h1>\n")
+	r, gitDir := open(t, repo)
+	tree, err := r.Snapshot()
+	if err != nil {
+		t.Fatalf("Snapshot with a commitless nested repository: %v", err)
+	}
+	if got := files(t, repo, gitDir, tree); !reflect.DeepEqual(got, []string{"a.txt"}) {
+		t.Errorf("snapshot = %q, want only a.txt", got)
 	}
 }
