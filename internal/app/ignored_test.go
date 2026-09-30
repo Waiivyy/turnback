@@ -73,18 +73,26 @@ func TestUndoingACaseOnlyRenameOfAnIgnoredName(t *testing.T) {
 	a := openApp(t, repo)
 	turn(t, a, "Lower-case the settings file", func() { repo.Git("mv", "Settings.local", "settings.local") })
 
-	applyUndo(t, a, planUndo(t, a, 1), false)
+	// On a case-insensitive disk both spellings are the same tracked file,
+	// so the rename is undone. Elsewhere the old name is ignored now, so the
+	// rename stays and there is nothing to undo. Either way exactly one copy
+	// remains.
+	insensitive := caseInsensitive(t, repo.Dir)
+	_, err := a.ApplyUndo(planUndo(t, a, 1), false)
+	switch {
+	case insensitive && err != nil:
+		t.Fatalf("undo: %v", err)
+	case !insensitive && !errors.Is(err, app.ErrNothingToUndo):
+		t.Fatalf("undo err = %v, want nothing to undo: the old name is ignored now", err)
+	}
 	var kept []string
 	for _, name := range names(t, repo.Dir) {
 		if strings.EqualFold(name, "settings.local") {
 			kept = append(kept, name)
 		}
 	}
-	// On a case-insensitive disk both spellings are the same tracked file,
-	// so the rename is undone. Elsewhere the old name is ignored now, so the
-	// rename stays. Either way exactly one copy remains.
 	want := "settings.local"
-	if caseInsensitive(t, repo.Dir) {
+	if insensitive {
 		want = "Settings.local"
 	}
 	if !reflect.DeepEqual(kept, []string{want}) {

@@ -14,10 +14,14 @@ import (
 // for the rest of the test, so personal settings cannot change results.
 func Isolate(t testing.TB) {
 	t.Helper()
-	cfg := filepath.Join(t.TempDir(), "gitconfig")
+	// git before 2.32 ignores GIT_CONFIG_GLOBAL and uses ~/.gitconfig, so
+	// HOME moves too, or git config --global would write the real one.
+	home := t.TempDir()
+	cfg := filepath.Join(home, ".gitconfig")
 	if err := os.WriteFile(cfg, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("HOME", home)
 	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	// Also hides the default global ignore and attributes files.
