@@ -153,14 +153,17 @@ func (r *Repo) BuildTree(base string, changes map[string]*Entry) (string, error)
 }
 
 // Checkout moves the working tree from snapshot from to snapshot to,
-// writing only the paths that differ. The private index must match from,
-// as it does right after Snapshot.
+// writing only the paths that differ.
 //
 // It never overwrites a file that changed on disk after from was taken, and
 // never overwrites or writes through anything git does not track: a file
 // the new snapshot adds is only created where nothing exists yet, inside
 // real folders. If it cannot finish, it puts back what it changed and
 // returns an error.
+//
+// The private index must match from for every path that differs between
+// from and to, as it does right after Snapshot. Other paths may differ;
+// they are left as they are.
 func (r *Repo) Checkout(from, to string) error {
 	changes, err := r.TreeDiff(from, to)
 	if err != nil {

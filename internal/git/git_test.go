@@ -100,3 +100,40 @@ func TestLocateOutsideARepository(t *testing.T) {
 		t.Errorf("err = %v, want ErrNotRepository", err)
 	}
 }
+
+func TestUncommittedFindsEveryKindOfUncommittedChange(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	for _, f := range []string{"clean.txt", "modified.txt", "staged.txt", "deleted.txt", "odd [name].txt"} {
+		repo.Write(f, "committed\n")
+	}
+	repo.Commit("initial")
+	repo.Write("modified.txt", "changed\n")
+	repo.Write("staged.txt", "changed\n")
+	repo.Git("add", "staged.txt")
+	repo.Remove("deleted.txt")
+	repo.Write("untracked.txt", "new\n")
+
+	asked := []string{"clean.txt", "modified.txt", "staged.txt", "deleted.txt", "untracked.txt", "odd [name].txt", "missing.txt"}
+	got, err := git.Uncommitted(repo.Dir, asked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"modified.txt": true, "staged.txt": true, "deleted.txt": true, "untracked.txt": true}
+	if len(got) != len(want) {
+		t.Errorf("Uncommitted = %v, want %v", got, want)
+	}
+	for p := range want {
+		if !got[p] {
+			t.Errorf("%s not reported as uncommitted", p)
+		}
+	}
+}
+
+func TestUncommittedWithoutAnyCommit(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write("a.txt", "x\n")
+	got, err := git.Uncommitted(repo.Dir, []string{"a.txt"})
+	if err != nil || !got["a.txt"] {
+		t.Errorf("Uncommitted = %v, %v; want a.txt uncommitted", got, err)
+	}
+}

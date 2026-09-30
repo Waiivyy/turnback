@@ -40,3 +40,27 @@ func Locate(dir string) (Location, error) {
 	}
 	return loc, nil
 }
+
+// Uncommitted returns the subset of paths (relative to root) whose content
+// in the working tree or the staging area differs from HEAD, including
+// untracked files and deletions. It does not write to the index.
+func Uncommitted(root string, paths []string) (map[string]bool, error) {
+	out := make(map[string]bool)
+	if len(paths) == 0 {
+		return out, nil
+	}
+	r := Runner{Dir: root, Opts: []string{"--literal-pathspecs"}}
+	args := append([]string{"status", "--porcelain=v1", "-z", "--no-renames",
+		"--untracked-files=all", "--ignore-submodules=all", "--"}, paths...)
+	status, err := r.Run(args...)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range strings.Split(status, "\x00") {
+		// Each entry is "XY path".
+		if len(entry) > 3 {
+			out[entry[3:]] = true
+		}
+	}
+	return out, nil
+}
