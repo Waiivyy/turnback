@@ -51,16 +51,21 @@ Deleting the folder removes every trace of turnback from the repository.
 
 `.turnback/git` is a private git repository whose work tree is your working
 tree. It has its own index, object database and refs. Taking a snapshot means
-running `git add --all` and `git write-tree` against that private repository.
+bringing that private index in line with your files and running
+`git write-tree`.
 
 - Your staging area is never touched, because the private repository has its
   own index.
 - Nothing shows up in `git log --all`, and `git gc` in your repository cannot
   delete snapshot data, because the private repository has its own refs and
   objects.
-- The same ignore rules apply as in your repository. The `.gitignore` files
-  in the working tree apply automatically, and `.git/info/exclude` and
-  `core.excludesFile` are copied into the private repository on every run.
+- Which files a snapshot holds is decided by your repository, not by the
+  private one: exactly the files it tracks plus the untracked files it does
+  not ignore, as `git ls-files` lists them with your own ignore rules. A file
+  that becomes ignored leaves the next snapshot and is never read again; a
+  tracked file that matches an ignore pattern, such as a force-added lock
+  file, stays in. Nested repositories are recorded as a pointer to their
+  current commit when they have one.
 - Snapshots are exact bytes. The private repository disables line-ending
   conversion, clean and smudge filters (including Git LFS), keyword expansion
   and re-encoding, so restoring a snapshot reproduces files byte for byte.
@@ -72,10 +77,10 @@ running `git add --all` and `git write-tree` against that private repository.
 
 ## Which files turnback may touch
 
-turnback works on exactly the files `git add --all` would pick up: tracked
-files and untracked files that are not ignored. Ignored files such as
-`node_modules/`, `.env` or build output are never read into a snapshot and
-never written. Nothing outside the repository root is touched. An undo writes
+turnback works on exactly the files your repository tracks, plus untracked
+files it does not ignore. Ignored files such as `node_modules/`, `.env` or
+build output are never read into a snapshot and never written. A file a
+turn changed that git ignores by now is skipped by an undo. Nothing outside the repository root is touched. An undo writes
 only paths that the undone turn changed, and never overwrites or writes
 through something git does not track: if an ignored file or a symlinked
 folder is in the way, the undo stops and says so.
@@ -116,8 +121,17 @@ Applying the plan happens in two phases, both in the private repository:
    `read-tree -u` is not used for this step because it silently replaces an
    ignored file standing in the way, such as a `.env`.
 
-If the second phase cannot finish, the first one is rolled back. The state
-just before the undo and the result are recorded as a new turn.
+git's exit status alone is not trusted: `read-tree` can stop halfway
+(a folder that is not writable) or skip a deletion with only a warning. After
+each phase, every written path is checked on disk against the plan, by
+content, type and executable bit. On any error or mismatch, turnback puts
+every path back and checks that too. Then either nothing changed, and it
+says so, or, if even putting things back failed, whatever did change is
+recorded as a partial undo turn that can itself be undone. No change is ever
+left unrecorded. While files are being written, Ctrl-C is ignored and git
+runs outside the terminal's process group.
+
+The state just before the undo and the result are recorded as a new turn.
 
 ## Safety rules
 
@@ -126,13 +140,18 @@ just before the undo and the result are recorded as a new turn.
 2. **All or nothing.** If any file conflicts, no file is written.
 3. **Unsaved work is protected.** A file is *dirty* when its current content
    is neither committed (matches `HEAD`) nor recorded (matches the latest
-   snapshot). Undo refuses to write a dirty file unless `--force` is given.
+   snapshot). Both are compared by content, the way git compares it, so a
+   file marked skip-worktree cannot hide local edits. Undo refuses to write a
+   dirty file unless `--force` is given.
    Uncommitted agent changes that turnback has recorded are not dirty,
    because turnback holds a copy of them.
 4. **Every undo is undoable.** An undo is recorded as a turn.
 5. **Fresh check before writing.** turnback takes a new snapshot right before
    it writes. If a file the undo would write changed after the dry run,
    turnback stops without writing anything.
+6. **Verified writes.** Every written file is checked on disk. If anything
+   did not land, the undo is rolled back, or recorded as a partial undo when
+   a rollback is impossible.
 
 ## Limitations
 
