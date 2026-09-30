@@ -327,7 +327,7 @@ lists every option; these are the ones you will use most.
 
 | Option | Description |
 |---|---|
-| `-m, --message <text>` | Describe the turn. Given to `end`, it replaces the one given to `start`. Without a description, turnback writes a short summary of the changed files. |
+| `-m, --message <text>` | Describe the turn. Given to `end`, it replaces the one given to `start`. Without a description, turnback describes the turn from its diff, such as "Add withRetry; update Get", naming functions and types for Go, JavaScript and TypeScript, Python, Rust and Ruby, and files otherwise. |
 | `--agent <name>` | `start` only. Record which agent made the changes, for example `cursor`. |
 | `--discard` | `end` only. Stop recording without saving a turn. |
 
@@ -564,7 +564,7 @@ on macOS and Linux. Reports from Windows users are very welcome.
       detection and undo of an undo
 - [x] Automatic recording at every commit, through a git hook
 - [ ] Local web UI for browsing turns
-- [ ] Smarter automatic descriptions
+- [x] Descriptions written from the diff when you give none
 - [x] Prebuilt binaries and a one-line install script
 - [ ] A Homebrew formula
 
