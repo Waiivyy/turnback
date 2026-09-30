@@ -3,6 +3,8 @@ package app_test
 import (
 	"errors"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -192,5 +194,42 @@ func TestACommitTurnCanBeUndone(t *testing.T) {
 	applyUndo(t, a, planUndo(t, a, turn.ID), false)
 	if got := repo.Read("a.txt"); got != "1\n" {
 		t.Errorf("a.txt = %q", got)
+	}
+}
+
+func TestTheHookDoesNothingWhenItIsAlreadyRunning(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as a stand-in for turnback")
+	}
+	repo := testutil.NewRepo(t)
+	a := openApp(t, repo)
+	hook, err := a.InstallHook("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A stand-in turnback that leaves a mark when the hook runs it.
+	bin := testutil.TempDir(t)
+	mark := filepath.Join(bin, "ran")
+	fake := "#!/bin/sh\ntouch '" + mark + "'\n"
+	if err := os.WriteFile(filepath.Join(bin, "turnback"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runHook := func(extra ...string) {
+		t.Helper()
+		cmd := exec.Command("sh", hook)
+		cmd.Dir = repo.Dir
+		cmd.Env = append(os.Environ(), append([]string{"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH")}, extra...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("hook: %v\n%s", err, out)
+		}
+	}
+
+	runHook("TURNBACK_IN_HOOK=1")
+	if _, err := os.Stat(mark); err == nil {
+		t.Fatal("the hook ran turnback although it was already running inside itself")
+	}
+	runHook()
+	if _, err := os.Stat(mark); err != nil {
+		t.Error("the hook did not run turnback on a normal commit")
 	}
 }

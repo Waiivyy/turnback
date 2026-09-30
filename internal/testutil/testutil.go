@@ -116,9 +116,10 @@ func (r *Repo) Remove(rel string) {
 	}
 }
 
-// Commit stages everything and commits it.
+// Commit stages everything and commits it. Hooks are not run, so a
+// turnback hook installed by a test never fires behind its back.
 func (r *Repo) Commit(msg string) {
 	r.t.Helper()
 	r.Git("add", "-A")
-	r.Git("commit", "-q", "--allow-empty", "-m", msg)
+	r.Git("-c", "core.hooksPath="+filepath.Join(r.Dir, ".git", "no-hooks"), "commit", "-q", "--allow-empty", "-m", msg)
 }

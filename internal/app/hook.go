@@ -44,18 +44,26 @@ func (e *HooksManagedError) Error() string {
 	return fmt.Sprintf("git hooks in this repository are managed in %s (core.hooksPath)", e.Dir)
 }
 
-// hookScript is the post-commit hook. It finds turnback on PATH, or where
-// it was installed from, and never makes a commit fail.
+// hookScript is the post-commit hook. It finds turnback on PATH, or at self
+// if given, never makes a commit fail, and does nothing when it is already
+// running inside itself, so a commit made while recording cannot recurse.
 func hookScript(self string) string {
+	find := "tb=$(command -v turnback 2>/dev/null) || exit 0"
+	if self != "" {
+		find = "tb=$(command -v turnback 2>/dev/null) || tb=" + quoteForShell(filepath.ToSlash(self))
+	}
 	return fmt.Sprintf(`#!/bin/sh
 %s: records a turn at every commit.
 # Remove it with: turnback hook uninstall
-tb=$(command -v turnback 2>/dev/null) || tb=%s
+[ -n "$TURNBACK_IN_HOOK" ] && exit 0
+TURNBACK_IN_HOOK=1
+export TURNBACK_IN_HOOK
+%s
 if [ -x "$tb" ]; then
 	"$tb" hook post-commit
 fi
 exit 0
-`, hookMarker, quoteForShell(filepath.ToSlash(self)))
+`, hookMarker, find)
 }
 
 func quoteForShell(s string) string {
@@ -77,7 +85,8 @@ func (a *App) hookPath() (string, error) {
 
 // InstallHook installs the post-commit hook that records a turn at every
 // commit; self is the path of the turnback binary, used when turnback is
-// not on the PATH of whoever makes the commit. It returns the hook's path.
+// not on the PATH of whoever makes the commit, or "". It returns the
+// hook's path.
 func (a *App) InstallHook(self string) (string, error) {
 	if out, err := (git.Runner{Dir: a.Root}).Run("config", "--get", "core.hooksPath"); err == nil && strings.TrimSpace(out) != "" {
 		return "", &HooksManagedError{Dir: strings.TrimSpace(out)}
