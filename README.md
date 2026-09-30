@@ -61,13 +61,14 @@ one you don't want while everything else stays put.
 **macOS and Linux**, one line, no Go needed:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Waiivyy/turnback/main/install.sh | sh
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/Waiivyy/turnback/main/install.sh | sh
 ```
 
 The [script](install.sh) downloads the binary for your machine from the
-[latest release](https://github.com/Waiivyy/turnback/releases/latest), checks
-its SHA-256 checksum and installs it to `~/.local/bin`, without root rights.
-If that folder is not on your `PATH` yet, the script prints the line to add.
+[latest release](https://github.com/Waiivyy/turnback/releases/latest) over
+HTTPS only, checks its SHA-256 checksum and installs it to `~/.local/bin`,
+without root rights. It changes nothing unless the checksum matches. If that
+folder is not on your `PATH` yet, the script prints the line to add.
 Set `TURNBACK_INSTALL_DIR` to put it elsewhere, or `TURNBACK_VERSION=v0.1.0`
 to pin a version.
 

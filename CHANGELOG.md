@@ -57,6 +57,14 @@ and the project uses [Semantic Versioning](https://semver.org/).
   file. A dry run for a turn that deleted 20,000 of 30,000 files went from
   about 4 seconds to under half a second.
 
+- The install script now resolves the latest release once, so the archive
+  and its checksum always come from the same release; stops on Ctrl-C
+  instead of carrying on; says so when no SHA-256 tool is installed rather
+  than reporting a checksum mismatch; replaces the binary in one step even
+  when the temporary folder is on another file system; points Git Bash users
+  to the Windows download; and cannot run half of itself if its own download
+  is cut short. Downloads from GitHub use HTTPS only.
+
 ### Changed
 
 - Building from source needs Go 1.24 or newer. Older Go versions leave out a

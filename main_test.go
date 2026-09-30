@@ -1,8 +1,13 @@
 package main
 
 import (
+	"archive/tar"
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -165,5 +170,88 @@ func TestAnUndoThatRunsOutOfSpaceLeavesNothingBehind(t *testing.T) {
 	turnback(t, repo.Dir, "undo", "1", "--yes")
 	if repo.Read("big.bin") != big {
 		t.Error("big.bin did not come back whole")
+	}
+}
+
+// mirror writes a release archive holding the built binary, and its
+// checksums, the way scripts/build-release.sh lays them out.
+func mirror(t *testing.T) (dir, archive string) {
+	t.Helper()
+	dir = t.TempDir()
+	name := "turnback_" + runtime.GOOS + "_" + runtime.GOARCH
+	bin, err := os.ReadFile(binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{Name: name + "/turnback", Mode: 0o755, Size: int64(len(bin))}); err != nil {
+		t.Fatal(err)
+	}
+	tw.Write(bin)
+	tw.Close()
+	gz.Close()
+	archive = filepath.Join(dir, name+".tar.gz")
+	if err := os.WriteFile(archive, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(buf.Bytes())
+	sums := fmt.Sprintf("%x  %s.tar.gz\n", sum, name)
+	if err := os.WriteFile(filepath.Join(dir, "checksums.txt"), []byte(sums), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir, archive
+}
+
+func install(t *testing.T, from, to string) (string, error) {
+	t.Helper()
+	cmd := exec.Command("sh", "install.sh")
+	cmd.Env = append(os.Environ(), "TURNBACK_BASE_URL=file://"+from, "TURNBACK_INSTALL_DIR="+to)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func TestTheInstallScriptInstallsOnlyVerifiedBinaries(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("install.sh is for Unix systems")
+	}
+	for _, tool := range []string{"sh", "curl", "tar"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skipf("%s is not installed", tool)
+		}
+	}
+	switch runtime.GOOS + "/" + runtime.GOARCH {
+	case "darwin/amd64", "darwin/arm64", "linux/amd64", "linux/arm64", "freebsd/amd64":
+	default:
+		t.Skip("no release archive is built for this platform")
+	}
+	from, archive := mirror(t)
+	to := filepath.Join(t.TempDir(), "bin")
+	out, err := install(t, from, to)
+	if err != nil || !strings.Contains(out, "Installed turnback") {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	installed := filepath.Join(to, "turnback")
+	if got, err := exec.Command(installed, "--version").Output(); err != nil || !strings.HasPrefix(string(got), "turnback ") {
+		t.Fatalf("the installed binary: %v, %q", err, got)
+	}
+	before, _ := os.ReadFile(installed)
+
+	// A tampered archive is refused, and the installed binary stays.
+	tampered, _ := os.ReadFile(archive)
+	tampered[len(tampered)/2] ^= 0xff
+	if err := os.WriteFile(archive, tampered, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err = install(t, from, to)
+	if err == nil || !strings.Contains(out, "checksum mismatch") || !strings.Contains(out, "nothing was installed") {
+		t.Errorf("tampered install: %v\n%s", err, out)
+	}
+	if after, _ := os.ReadFile(installed); !bytes.Equal(before, after) {
+		t.Error("the installed binary changed")
+	}
+	if entries, _ := os.ReadDir(to); len(entries) != 1 {
+		t.Errorf("install left files behind in %s: %d entries", to, len(entries))
 	}
 }
