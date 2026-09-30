@@ -505,7 +505,8 @@ Yes. turnback always works on the whole repository, and paths you pass to
 <details>
 <summary><strong>Does it work on Windows?</strong></summary>
 
-turnback builds for Windows, but so far it is only tested on macOS and Linux.
+Every release includes Windows binaries, but so far turnback is only tested
+on macOS and Linux. Reports from Windows users are very welcome.
 
 </details>
 
@@ -518,7 +519,8 @@ turnback builds for Windows, but so far it is only tested on macOS and Linux.
 - [ ] Automatic recording through a git hook
 - [ ] Local web UI for browsing turns
 - [ ] Smarter automatic descriptions
-- [ ] Prebuilt binaries and a Homebrew formula
+- [x] Prebuilt binaries and a one-line install script
+- [ ] A Homebrew formula
 
 ## Contributing
 
