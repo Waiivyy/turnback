@@ -181,6 +181,36 @@ The state just before the undo and the result are recorded as a new turn.
    did not land, the undo is rolled back, or recorded as a partial undo when
    a rollback is impossible.
 
+## The web page
+
+`turnback ui` serves one page, embedded in the binary, and a small JSON API
+that the page reads. The page shows the user's code, so the server trusts no
+request until it has checked it:
+
+- It listens on `127.0.0.1` only, on a free port unless `--port` names one.
+- Every request must carry a token of 24 random bytes, either in the `token`
+  query parameter of the printed address or in the `X-Turnback-Token` header
+  the page sends. The comparison takes constant time, and the token is new
+  each time the server starts.
+- A request whose `Host` header is not `127.0.0.1`, `localhost` or `[::1]`
+  with the server's port is refused. A site that rebinds its own domain to
+  the loopback address still sends its own name, so DNS rebinding gets
+  nothing.
+- Only `GET` and `HEAD` are served. The server takes no lock and changes
+  nothing in the repository or in its turns, so it can run next to any other
+  command.
+- The page may run only its own inline script and style, allowed by a nonce
+  that is new for every response, under a policy that blocks everything else.
+  Responses are marked `no-store`, `nosniff` and `no-referrer`.
+- The page inserts every value as text, never as markup, so a description or
+  a file that contains HTML is shown as it is.
+
+While it is visible, the page checks `/api/state` every few seconds. The state
+includes the number of turns and the latest turn id, read from the directory
+listing alone, and the page loads the turns again only when those change. A
+turn's diff is cut at a line end beyond 16 MB and marked as truncated, and the
+page draws long diffs a part at a time, so a huge turn cannot freeze it.
+
 ## Limitations
 
 - Conflict detection is textual. Undoing a turn that added a function which a

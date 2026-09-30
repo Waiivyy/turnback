@@ -18,6 +18,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Turns without a description are described from their diff, naming the
   functions and types they add, change or remove in Go, JavaScript and
   TypeScript, Python, Rust and Ruby, as in "Add withRetry; update Get".
+- `turnback ui` opens a local, read-only web page for browsing turns: the
+  list of turns next to each turn's details and its diff by file, with line
+  numbers. It updates as turns are recorded, filters by text, file or agent,
+  and works in light and dark mode and at phone width. It is served on
+  127.0.0.1 only, behind a secret address, refuses requests that name another
+  host, and runs only its own script.
 - CI runs the tests on Windows too, and against git 2.30.0, the oldest
   version turnback supports.
 
