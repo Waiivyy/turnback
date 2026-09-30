@@ -205,6 +205,7 @@ func (r *Repo) members() (map[string]bool, error) {
 			members[path] = true
 		}
 	}
+	linked := make(map[string]bool) // folder -> whether it is, or sits under, a symlink
 	for _, entry := range splitNUL(staged) {
 		meta, path, _ := strings.Cut(entry, "\t")
 		if strings.HasPrefix(meta, "160000 ") {
@@ -212,6 +213,9 @@ func (r *Repo) members() (map[string]bool, error) {
 				add(path)
 			}
 			continue
+		}
+		if r.underSymlink(path, linked) {
+			continue // its folder was replaced by a symlink; git cannot record it there
 		}
 		if fi, err := os.Lstat(filepath.Join(r.root, filepath.FromSlash(path))); err == nil && fi.IsDir() {
 			continue // a tracked file replaced by a folder; its files are listed as untracked
@@ -228,6 +232,29 @@ func (r *Repo) members() (map[string]bool, error) {
 		add(path)
 	}
 	return members, nil
+}
+
+// underSymlink reports whether one of the folders above path is a symlink
+// on disk. cache remembers the answer for each folder.
+func (r *Repo) underSymlink(path string, cache map[string]bool) bool {
+	dir := path
+	for {
+		i := strings.LastIndexByte(dir, '/')
+		if i < 0 {
+			return false
+		}
+		dir = dir[:i]
+		linked, seen := cache[dir]
+		if !seen {
+			fi, err := os.Lstat(filepath.Join(r.root, filepath.FromSlash(dir)))
+			linked = err == nil && fi.Mode()&os.ModeSymlink != 0
+			if !linked {
+				linked = r.underSymlink(dir, cache)
+			}
+			cache[dir] = linked
+		}
+		return linked
+	}
 }
 
 func (r *Repo) isOwn(path string) bool {

@@ -197,7 +197,7 @@ func (r *Repo) Checkout(from, to string) error {
 	var adds []EntryChange
 	tracked := make(map[string]*Entry) // changed or deleted paths that exist in from
 	added := make(map[string]*Entry)
-	deleted := make(map[string]bool)
+	deleted := make(map[string]bool) // exact and lower-case spellings of deleted paths
 	for _, c := range changes {
 		if c.Old == nil {
 			adds = append(adds, c)
@@ -207,6 +207,7 @@ func (r *Repo) Checkout(from, to string) error {
 		tracked[c.Path] = c.New
 		if c.New == nil {
 			deleted[c.Path] = true
+			deleted[strings.ToLower(c.Path)] = true
 		}
 	}
 	// Fail early when an untracked file sits where a new file must go.
@@ -291,6 +292,14 @@ func (co *checkout) fail(cause error) error {
 	}
 	var leftover []string
 	for _, c := range co.changes {
+		if c.Old == nil {
+			// A new path: only a file this checkout wrote and could not
+			// remove is left over. Something else standing there is not.
+			if r.matches(c.Path, c.New) {
+				leftover = append(leftover, c.Path)
+			}
+			continue
+		}
 		if !r.matches(c.Path, c.Old) {
 			leftover = append(leftover, c.Path)
 		}
@@ -393,8 +402,8 @@ func (r *Repo) checkFree(path string, deleted map[string]bool, strict bool) erro
 		}
 		last := i == len(parts)-1
 		switch {
-		case !strict && deleted[rel]:
-			return nil // phase 1 removes it
+		case !strict && (deleted[rel] || deleted[strings.ToLower(rel)]):
+			return nil // phase 1 removes it (on a case-insensitive disk, maybe under another spelling)
 		case last && fi.IsDir() && !strict:
 			continue // phase 1 may empty and remove it
 		case last && fi.IsDir():

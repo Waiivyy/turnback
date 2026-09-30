@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -337,5 +338,33 @@ func TestSnapshotFollowsAFileReplacedByAFolderAndBack(t *testing.T) {
 	}
 	if got := files(t, repo, gitDir, tree); !reflect.DeepEqual(got, []string{"lib", "utils/index.ts"}) {
 		t.Errorf("snapshot = %q", got)
+	}
+}
+
+func TestSnapshotFollowsAFolderReplacedByASymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need extra rights on Windows")
+	}
+	repo := testutil.NewRepo(t)
+	repo.Write("config/app.ini", "a=1\n")
+	repo.Commit("initial")
+	shared := testutil.TempDir(t)
+	if err := os.WriteFile(filepath.Join(shared, "app.ini"), []byte("a=2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, gitDir := open(t, repo)
+	snapshot(t, r)
+	if err := os.RemoveAll(repo.Path("config")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(shared, repo.Path("config")); err != nil {
+		t.Fatal(err)
+	}
+	tree, err := r.Snapshot()
+	if err != nil {
+		t.Fatalf("Snapshot after replacing a folder with a symlink: %v", err)
+	}
+	if got := files(t, repo, gitDir, tree); !reflect.DeepEqual(got, []string{"config"}) {
+		t.Errorf("snapshot = %q, want only the symlink", got)
 	}
 }

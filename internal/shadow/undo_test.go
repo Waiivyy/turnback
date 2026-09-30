@@ -371,3 +371,27 @@ func TestCheckoutRemovesFoldersItCreatedWhenItRollsBack(t *testing.T) {
 		t.Error("newdir/ was left behind by the rollback")
 	}
 }
+
+func TestAnObstacleFoundDuringCheckoutIsNotReportedAsDamage(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write("old.txt", "old\n")
+	r, _ := open(t, repo)
+	from := snapshot(t, r)
+	blob, _ := r.WriteBlob([]byte("new\n"))
+	to, err := r.BuildTree(from, map[string]*shadow.Entry{"old.txt": nil, "new/file.txt": {Mode: "100644", ID: blob}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A folder where the new file must go passes the early check (phase 1
+	// might empty it) but not the strict one.
+	if err := os.MkdirAll(repo.Path("new/file.txt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var failed *shadow.CheckoutError
+	if err := r.Checkout(from, to); !errors.As(err, &failed) || !failed.Restored {
+		t.Fatalf("Checkout err = %v, want everything restored", err)
+	}
+	if repo.Read("old.txt") != "old\n" {
+		t.Error("old.txt was not put back")
+	}
+}
