@@ -213,8 +213,12 @@ func (a *App) RecordCommit() (*store.Turn, error) {
 	if err := a.markIgnored(files); err != nil {
 		return nil, err
 	}
+	patch, err := sh.Patch(base, tree)
+	if err != nil {
+		return nil, err
+	}
 	subject, commitID := a.headCommit()
-	desc := firstNonEmpty(subject, Summarize(files))
+	desc := firstNonEmpty(subject, Describe(files, patch))
 	id, err := a.Store.NextTurnID()
 	if err != nil {
 		return nil, err
@@ -224,10 +228,6 @@ func (a *App) RecordCommit() (*store.Turn, error) {
 		return nil, err
 	}
 	if err := sh.SetRef(turnRef(id), after); err != nil {
-		return nil, err
-	}
-	patch, err := sh.Patch(base, after)
-	if err != nil {
 		return nil, err
 	}
 	startedAt, err := sh.CommitTime(base)

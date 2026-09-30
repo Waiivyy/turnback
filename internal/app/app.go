@@ -176,20 +176,20 @@ func (a *App) End(opts EndOptions) (*Ended, error) {
 	if err := a.markIgnored(files); err != nil {
 		return nil, err
 	}
+	patch, err := sh.Patch(sess.Snapshot, tree)
+	if err != nil {
+		return nil, err
+	}
 	id, err := a.Store.NextTurnID()
 	if err != nil {
 		return nil, err
 	}
-	desc := firstNonEmpty(opts.Description, sess.Description, Summarize(files))
+	desc := firstNonEmpty(opts.Description, sess.Description, Describe(files, patch))
 	commit, err := sh.Commit(tree, sess.Snapshot, fmt.Sprintf("turn %d: %s", id, desc))
 	if err != nil {
 		return nil, err
 	}
 	if err := sh.SetRef(turnRef(id), commit); err != nil {
-		return nil, err
-	}
-	patch, err := sh.Patch(sess.Snapshot, commit)
-	if err != nil {
 		return nil, err
 	}
 	turn := &store.Turn{
