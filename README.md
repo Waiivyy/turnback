@@ -21,6 +21,7 @@
   <a href="#quickstart">Quickstart</a> &nbsp;&middot;&nbsp;
   <a href="#example-session">Example</a> &nbsp;&middot;&nbsp;
   <a href="#commands">Commands</a> &nbsp;&middot;&nbsp;
+  <a href="#browse-turns-in-your-browser">Web page</a> &nbsp;&middot;&nbsp;
   <a href="#safety">Safety</a> &nbsp;&middot;&nbsp;
   <a href="#faq">FAQ</a>
 </p>
@@ -42,6 +43,8 @@ one you don't want while everything else stays put.
   change that came after, whether a later turn or you made it.
 - **Per-turn history.** Every turn gets an id, a time, a description, the files
   it touched and its diff.
+- **A page to browse it all.** `turnback ui` opens a local, read-only web page
+  with every turn, the files it touched and its diff, updated as you work.
 - **Your edits stay yours.** Changes you make between agent turns are never
   counted as part of a turn, and an undo keeps them.
 - **Safe by default.** Every undo is a dry run until you confirm. Overlapping
@@ -306,6 +309,7 @@ hint: Undo the later turns first, or leave the conflicting files out and undo th
 | `turnback show [<turn>]` | Show a turn's details, files and diff; the latest turn by default |
 | `turnback undo <turn>` | Take one turn back out, or some of its files, keeping everything after it |
 | `turnback hook install` | Record a turn at every commit instead of wrapping turns in `start` and `end` |
+| `turnback ui` | Browse the recorded turns and their diffs in a local web page |
 
 `<turn>` is an id from `turnback log`, or `last`. `turnback help <command>`
 lists every option; these are the ones you will use most.
@@ -356,9 +360,48 @@ lists every option; these are the ones you will use most.
 
 </details>
 
+<details>
+<summary><strong><code>turnback ui</code></strong></summary>
+
+| Option | Description |
+|---|---|
+| `--port <n>` | Serve on this port instead of a free one. |
+| `--no-open` | Print the address without opening a browser. |
+
+</details>
+
 In a terminal, long output is paged through `less` and diffs are colored. Use
 `--no-pager` or `PAGER=cat` to turn paging off, and `NO_COLOR=1` to turn colors
 off.
+
+## Browse turns in your browser
+
+`turnback ui` opens a web page with every recorded turn next to its details
+and its diff, file by file:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/ui-dark.png">
+  <img src="docs/assets/ui-light.png" width="880" alt="The turnback web page. On the left, a list of seven turns with their times, file counts, line counts and agents. On the right, turn 2, Switch the limiter to a sliding window: when it was recorded, by which agent, the command that undoes it with a copy button, and its diff with line numbers.">
+</picture>
+
+```console
+$ turnback ui
+Serving the turns of shop-api at
+
+    http://127.0.0.1:52817/?token=9c1e5f0b…
+
+Press Ctrl-C to stop.
+```
+
+- Turns show up on the page as they are recorded, and so does a turn that is
+  being recorded right now.
+- Filter by description, file or agent, press `j` and `k` to move between
+  turns, and link to any turn by its address.
+- The page only reads. To undo a turn, it shows the command to run in the
+  repository, with a button that copies it.
+- It is served on `127.0.0.1` only, and every request must carry the secret
+  in the address, which changes each time. Requests that name another host are
+  refused, so a web page you visit cannot read your code through it.
 
 ## Record turns automatically
 
@@ -551,8 +594,9 @@ Yes. turnback always works on the whole repository, and paths you pass to
 <details>
 <summary><strong>Does it work on Windows?</strong></summary>
 
-Every release includes Windows binaries, but so far turnback is only tested
-on macOS and Linux. Reports from Windows users are very welcome.
+Yes. Every release includes Windows binaries, and the whole test suite runs
+on Windows, macOS and Linux for every change. Windows has seen the least real
+use so far, so reports from Windows users are very welcome.
 
 </details>
 
@@ -563,7 +607,7 @@ on macOS and Linux. Reports from Windows users are very welcome.
 - [x] Selective undo of a turn or a single file, with a dry run, conflict
       detection and undo of an undo
 - [x] Automatic recording at every commit, through a git hook
-- [ ] Local web UI for browsing turns
+- [x] Local web UI for browsing turns
 - [x] Descriptions written from the diff when you give none
 - [x] Prebuilt binaries and a one-line install script
 - [ ] A Homebrew formula
