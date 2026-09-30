@@ -19,6 +19,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
   a turn so it can be undone. Every write is verified on disk; an undo that
   cannot finish is rolled back, or recorded as a partial undo turn if even
   that fails. Large turns work too: no file list is passed on a command line.
+  Case-only renames undo correctly on case-insensitive disks.
+- A file that git starts ignoring during a turn is shown as "now ignored by
+  git, still on disk" rather than as deleted.
 - `turnback end` points to `show` and `undo` for the turn it just recorded.
 - `turnback log` lists turns newest first, filtered by `--since` (dates,
   times, durations, `today`, `yesterday`), `--file` (repeatable, relative to

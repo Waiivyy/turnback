@@ -396,8 +396,10 @@ turnback exists to fix mistakes, so it is built to never make new ones:
   committed nor recorded is only rewritten with `--force`, and turnback saves
   the current state first. This is decided by comparing content, so files
   hidden from `git status` (skip-worktree) are covered too.
-- **Nothing git ignores is touched.** Not even when an ignored file, such as a
-  `.env`, stands where a deleted file would come back: the undo stops instead.
+- **Nothing git ignores is touched.** A file git ignores by now, such as a
+  `.env`, is left alone and listed as skipped, even if the undone turn changed
+  it. If something git does not track stands where a file would come back, the
+  undo writes nothing and says why.
 - **Fresh check before writing.** If a file changes while you are reading the
   preview, the undo stops rather than overwrite it.
 - **Verified writes.** After writing, turnback checks every file on disk. If

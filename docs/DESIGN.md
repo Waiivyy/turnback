@@ -79,11 +79,17 @@ bringing that private index in line with your files and running
 
 turnback works on exactly the files your repository tracks, plus untracked
 files it does not ignore. Ignored files such as `node_modules/`, `.env` or
-build output are never read into a snapshot and never written. A file a
-turn changed that git ignores by now is skipped by an undo. Nothing outside the repository root is touched. An undo writes
-only paths that the undone turn changed, and never overwrites or writes
-through something git does not track: if an ignored file or a symlinked
-folder is in the way, the undo stops and says so.
+build output are never read into a snapshot and never written, and nothing
+outside the repository root is touched.
+
+An undo writes only paths that the undone turn changed:
+
+- A path git ignores by now is left alone and listed as skipped, even if the
+  turn changed it. The rest of the undo still applies.
+- An undo never overwrites or writes through something git does not track.
+  If an untracked file, a folder of build output or a symlinked folder stands
+  where a file must come back, that file is a conflict and nothing is
+  written.
 
 ## Undo
 
@@ -100,6 +106,8 @@ goal is **C** with the turn's changes taken out.
 | Modified by the turn, deleted since | conflict |
 | Deleted by the turn, re-created since with different content | conflict |
 | Binary file or symlink, changed since | conflict |
+| Something git does not track where the file must come back | conflict |
+| Path ignored by git now | skipped and reported |
 | Submodule | skipped and reported |
 
 The three-way merge is the same operation `git revert` performs, done with
