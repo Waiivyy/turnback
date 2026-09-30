@@ -30,8 +30,8 @@ var endCommand = &command{
 	usage: `Usage: turnback end [-m <description>] [--discard]
 
 Snapshot the working tree again and record everything that changed since
-'turnback start' as a new turn. Without a description, turnback writes a
-short summary of the files that changed.
+'turnback start' as a new turn. Without a description, turnback describes
+the turn from its diff, such as "Add withRetry; update Get".
 
 Options:
   -m, --message <text>  describe the turn (replaces the one given to start)
