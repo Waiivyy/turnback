@@ -290,6 +290,9 @@ func (a *App) Status() (*Status, error) {
 		return nil, err
 	}
 	st.Pending = toFiles(changes)
+	if err := a.markIgnored(st.Pending); err != nil {
+		return nil, err
+	}
 	return st, nil
 }
 

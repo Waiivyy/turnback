@@ -255,3 +255,30 @@ func TestSummarize(t *testing.T) {
 		}
 	}
 }
+
+func TestStatusShowsFilesGitBeganIgnoringAsSuch(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write("app.js", "v1\n")
+	repo.Write(".env", "SECRET=1\n") // untracked and not ignored, so recorded
+	repo.Git("add", "app.js")
+	repo.Git("commit", "-qm", "initial")
+	a := openApp(t, repo)
+	start(t, a, app.StartOptions{Description: "Ignore the env file"})
+	repo.Write(".gitignore", ".env\n")
+
+	st, err := a.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range st.Pending {
+		if f.Path == ".env" && !f.Ignored {
+			t.Errorf("status shows .env as %+v, want it marked as ignored now, as end records it", f)
+		}
+	}
+	res := end(t, a, app.EndOptions{})
+	for _, f := range res.Turn.Files {
+		if f.Path == ".env" && !f.Ignored {
+			t.Errorf("end recorded .env as %+v", f)
+		}
+	}
+}
