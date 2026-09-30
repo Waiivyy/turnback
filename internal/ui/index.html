@@ -3,10 +3,874 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
 <title>turnback</title>
-<style nonce="{{nonce}}"></style>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Crect width='128' height='128' rx='28' fill='%235b4fe0'/%3E%3Cpath d='M43.4 88.6A32 32 0 1 0 43.4 43.4' fill='none' stroke='%23fff' stroke-width='12' stroke-linecap='round'/%3E%3Cpath d='M57 66H73' stroke='%23fbbf24' stroke-width='10' stroke-linecap='round'/%3E%3C/svg%3E">
+<style nonce="{{nonce}}">
+:root {
+  color-scheme: dark;
+  --bg: #0b1120;
+  --panel: #0f172a;
+  --raised: #131c2e;
+  --hover: #1a2438;
+  --selected: #1f2650;
+  --fg: #f1f5f9;
+  --muted: #94a3b8;
+  --faint: #64748b;
+  --border: #243049;
+  --accent: #a5b4fc;
+  --accent-solid: #6366f1;
+  --add: #4ade80;
+  --add-bg: rgba(34, 197, 94, 0.14);
+  --del: #f87171;
+  --del-bg: rgba(239, 68, 68, 0.14);
+  --hunk: #67e8f9;
+  --hunk-bg: rgba(34, 211, 238, 0.08);
+  --warn: #fbbf24;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #f8fafc;
+    --panel: #ffffff;
+    --raised: #ffffff;
+    --hover: #f1f5f9;
+    --selected: #eef2ff;
+    --fg: #0f172a;
+    --muted: #475569;
+    --faint: #64748b;
+    --border: #e2e8f0;
+    --accent: #4338ca;
+    --accent-solid: #4f46e5;
+    --add: #15803d;
+    --add-bg: #e6f9ec;
+    --del: #b91c1c;
+    --del-bg: #fdecec;
+    --hunk: #0e7490;
+    --hunk-bg: #ecfeff;
+    --warn: #b45309;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent-solid); outline-offset: 2px; border-radius: 4px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+button { font: inherit; color: inherit; cursor: pointer; }
+code, kbd { font-family: var(--mono); }
+
+/* Header */
+.top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  min-height: 56px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 650; }
+.brand svg { width: 26px; height: 26px; flex: none; }
+.where { flex: 1; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; min-width: 0; }
+.repo { color: var(--muted); font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex: none; animation: pulse 2s ease-in-out infinite; }
+.pill .text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes pulse { 50% { opacity: 0.35; } }
+.tools { display: flex; gap: 8px; margin-left: auto; }
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.icon-btn:hover { background: var(--hover); color: var(--fg); }
+.icon-btn[aria-pressed="true"] { color: var(--accent); border-color: var(--accent-solid); }
+.icon-btn svg { width: 18px; height: 18px; }
+
+/* Two panes */
+.layout { flex: 1; display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); min-height: 0; }
+.list { position: relative; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); background: var(--panel); }
+.search { padding: 12px; border-bottom: 1px solid var(--border); }
+.search input {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px var(--sans);
+}
+.search input::placeholder { color: var(--faint); }
+.turns { position: relative; list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; }
+.turn {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 150ms ease;
+}
+.turn:hover { background: var(--hover); }
+.turn[aria-current="true"] { background: var(--selected); box-shadow: inset 3px 0 0 var(--accent-solid); }
+.turn-id { flex: none; min-width: var(--idw, 2ch); font-family: var(--mono); font-size: 13px; color: var(--muted); text-align: right; padding-top: 2px; }
+.turn-body { min-width: 0; }
+.turn-desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.turn-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; margin-top: 2px; color: var(--muted); font-size: 13px; }
+.chip { padding: 0 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; overflow-wrap: anywhere; }
+.add { color: var(--add); }
+.del { color: var(--del); }
+.keys { margin: 0; padding: 8px 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+kbd { font-size: 11px; padding: 1px 5px; border: 1px solid var(--border); border-radius: 4px; }
+.empty { flex: 1; margin: 16px; color: var(--muted); }
+.empty code { color: var(--fg); }
+
+/* Detail */
+.detail { position: relative; overflow-y: auto; min-width: 0; padding: 20px 24px 48px; }
+.back {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  margin: -8px 0 8px -6px;
+  padding: 0 12px 0 6px;
+  border-radius: 8px;
+  color: var(--muted);
+  text-decoration: none;
+}
+.back:hover { background: var(--hover); color: var(--fg); }
+.back svg { width: 18px; height: 18px; }
+h1 { margin: 0 0 10px; font-size: 20px; line-height: 1.35; font-weight: 650; overflow-wrap: anywhere; }
+h1:focus { outline: none; }
+h1 .tid { color: var(--muted); font-family: var(--mono); font-size: 16px; font-weight: 500; margin-right: 8px; }
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 16px; margin: 0 0 16px; font-size: 14px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.undo {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0 0 24px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--raised);
+}
+.undo code { font-size: 14px; }
+.undo button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--hover);
+  font-size: 13px;
+  transition: border-color 150ms ease;
+}
+.undo button:hover { border-color: var(--accent-solid); }
+.undo p { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 13px; }
+h2 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.files { list-style: none; margin: 0 0 24px; padding: 0; font-family: var(--mono); font-size: 13px; }
+.files li { display: flex; gap: 12px; padding: 3px 0; }
+.files a { color: inherit; text-decoration: none; overflow-wrap: anywhere; min-width: 0; }
+.files a:hover { text-decoration: underline; }
+.files .name { overflow-wrap: anywhere; min-width: 0; }
+.status { width: 1ch; flex: none; font-family: var(--mono); font-weight: 700; }
+.status.A { color: var(--add); }
+.status.D { color: var(--del); }
+.status.M, .status.T { color: var(--warn); }
+.status.R { color: var(--hunk); }
+.counts { margin-left: auto; padding-left: 12px; white-space: nowrap; color: var(--muted); }
+.turn-meta .counts { margin-left: 0; padding-left: 0; }
+.note { margin: 0 0 16px; padding: 10px 12px; border-left: 3px solid var(--warn); background: var(--raised); color: var(--muted); font-size: 14px; }
+.note code { color: var(--fg); }
+
+/* Diffs */
+.file { margin: 0 0 16px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--raised); }
+.file > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--hover);
+  font-family: var(--mono);
+  font-size: 13px;
+  cursor: pointer;
+  list-style: none;
+}
+.file > summary::-webkit-details-marker { display: none; }
+.file > summary::before { content: "\25B8"; color: var(--muted); transition: transform 150ms ease; }
+.file[open] > summary::before { transform: rotate(90deg); }
+.file[open] > summary { border-bottom: 1px solid var(--border); }
+.file .path { overflow-wrap: anywhere; min-width: 0; }
+.file > .hint { margin: 8px 12px; font-size: 13px; }
+.code { overflow-x: auto; font: 12.5px/1.6 var(--mono); tab-size: 4; }
+.rows { display: inline-block; min-width: 100%; padding: 4px 0; }
+.row { display: flex; }
+.row .no { flex: none; width: var(--nw, 4ch); margin-right: 1ch; text-align: right; color: var(--faint); user-select: none; }
+.row .no::before { content: attr(data-n); }
+.row .no + .no { margin-right: 0; }
+.row .tx { flex: 1; padding: 0 16px 0 2ch; white-space: pre; }
+.row .tx::before { content: attr(data-mk); display: inline-block; width: 2ch; margin-left: -2ch; text-align: center; user-select: none; }
+.row.ins { background: var(--add-bg); }
+.row.ins .tx::before { color: var(--add); }
+.row.rem { background: var(--del-bg); }
+.row.rem .tx::before { color: var(--del); }
+.row.hunk { background: var(--hunk-bg); color: var(--hunk); }
+.row.meta { color: var(--muted); font-style: italic; }
+body.wrap .rows { display: block; }
+body.wrap .row .tx { white-space: pre-wrap; overflow-wrap: anywhere; }
+.more { margin: 8px 12px 12px; min-height: 32px; padding: 0 12px; border: 1px solid var(--border); border-radius: 6px; background: transparent; font-size: 13px; }
+.more:hover { border-color: var(--accent-solid); }
+.hint { color: var(--muted); max-width: 60ch; }
+.banner {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 10px 14px;
+  border: 1px solid var(--del);
+  border-radius: 8px;
+  background: var(--raised);
+  color: var(--fg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+@media (max-width: 899px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .list { border-right: 0; }
+  .detail { display: none; padding: 16px 16px 48px; }
+  body.show-detail .list { display: none; }
+  body.show-detail .detail { display: block; }
+  .back { display: inline-flex; }
+  .keys { display: none; }
+  .icon-btn { width: 44px; height: 44px; }
+  .where { order: 1; flex-basis: 100%; }
+  .facts { grid-template-columns: minmax(0, 1fr); }
+  .facts dd { margin-bottom: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+</style>
 </head>
 <body>
-<script nonce="{{nonce}}"></script>
+<header class="top">
+  <div class="brand">
+    <svg viewBox="0 0 128 128" aria-hidden="true"><defs><linearGradient id="tile" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#9333ea"/></linearGradient></defs><rect width="128" height="128" rx="28" fill="url(#tile)"/><path d="M43.4 88.6A32 32 0 1 0 43.4 43.4" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round"/><path d="M36.3 50.5L52.6 48.4L38.4 34.2Z" fill="#fff" stroke="#fff" stroke-width="3" stroke-linejoin="round"/><g stroke-linecap="round" stroke-width="7"><path d="M57 54H79" stroke="#fff" stroke-opacity=".85"/><path d="M57 66H73" stroke="#fbbf24"/><path d="M57 78H79" stroke="#fff" stroke-opacity=".85"/></g></svg>
+    <span>turnback</span>
+  </div>
+  <div class="where">
+    <span class="repo" id="repo"></span>
+    <span class="pill" id="recording" hidden><span class="dot" aria-hidden="true"></span><span class="text" id="recording-text"></span></span>
+    <span class="pill" id="hook" title="A git post-commit hook records each commit as a turn" hidden>Records every commit</span>
+  </div>
+  <div class="tools">
+    <button class="icon-btn" id="wrap" type="button" aria-pressed="false" aria-label="Wrap long lines" title="Wrap long lines">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M3 12h15a3 3 0 0 1 0 6h-4"/><path d="M16 16l-2 2 2 2"/><path d="M3 18h7"/></svg>
+    </button>
+    <button class="icon-btn" id="refresh" type="button" aria-label="Refresh" title="Refresh">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+    </button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="list" aria-label="Turns">
+    <div class="search">
+      <label for="filter" class="sr-only">Filter turns</label>
+      <input id="filter" type="search" placeholder="Filter by text, file or agent" autocomplete="off" spellcheck="false">
+    </div>
+    <ol class="turns" id="turns"></ol>
+    <p class="empty" id="empty" hidden></p>
+    <p class="keys"><kbd>/</kbd> filter &nbsp; <kbd>j</kbd> <kbd>k</kbd> older and newer turns</p>
+  </nav>
+  <main class="detail" id="detail">
+    <a class="back" id="back" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>All turns</a>
+    <div id="content"></div>
+  </main>
+</div>
+<div class="banner" id="banner" role="alert" hidden></div>
+<script nonce="{{nonce}}">
+"use strict";
+
+const token = new URLSearchParams(location.search).get("token") || "";
+const $ = (id) => document.getElementById(id);
+const narrow = window.matchMedia("(max-width: 899px)");
+
+const EAGER_LINES = 6000; // diff lines drawn up front; later files open on demand
+const FILE_LINES = 2000;  // lines drawn per file before "Show more"
+const MORE_LINES = 5000;  // lines each "Show more" adds
+const STATUS = { A: "added", M: "modified", D: "deleted", R: "renamed", T: "type changed" };
+
+let turns = [];            // newest first
+let seen = "";             // turn count and latest id, to spot new turns
+let defaultID = null;      // the turn shown when the address names none
+let shownID = null;        // the turn in the detail pane
+let loads = 0;             // ignores answers to superseded loads
+let listClick = false;     // the next address change comes from the list
+let openedFromList = false;
+let recorded = null;       // the detail's "Recorded" line, kept current
+
+// ---------- helpers ----------
+
+function el(tag, attrs, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs || {})) {
+    if (value === undefined || value === null || value === false) continue;
+    if (key === "class") node.className = value;
+    else if (key === "text") node.textContent = value;
+    else node.setAttribute(key, value === true ? "" : value);
+  }
+  for (const child of children) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(typeof child === "string" ? document.createTextNode(child) : child);
+  }
+  return node;
+}
+
+class APIError extends Error {
+  constructor(status, message) { super(message); this.status = status; }
+}
+
+async function api(path) {
+  const res = await fetch(path, { headers: { "X-Turnback-Token": token }, cache: "no-store" });
+  if (!res.ok) {
+    let message = res.status + " " + res.statusText;
+    try { message = (await res.json()).error || message; } catch (_) { /* not JSON */ }
+    throw new APIError(res.status, message);
+  }
+  return res.json();
+}
+
+function plural(n, unit) { return n === 1 ? "1 " + unit : n + " " + unit + "s"; }
+
+function ago(then) {
+  const s = (Date.now() - then.getTime()) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return plural(Math.floor(s / 60), "minute") + " ago";
+  if (s < 86400) return plural(Math.floor(s / 3600), "hour") + " ago";
+  return plural(Math.floor(s / 86400), "day") + " ago";
+}
+
+function clock(then) { return then.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); }
+
+function when(then) {
+  const day = new Date();
+  day.setHours(0, 0, 0, 0);
+  if (then >= day) return "today " + clock(then);
+  day.setDate(day.getDate() - 1);
+  if (then >= day) return "yesterday " + clock(then);
+  const opts = { month: "short", day: "numeric" };
+  if (then.getFullYear() !== new Date().getFullYear()) opts.year = "numeric";
+  return then.toLocaleDateString([], opts) + " " + clock(then);
+}
+
+function took(turn) {
+  const s = (new Date(turn.ended_at) - new Date(turn.started_at)) / 1000;
+  if (s < 60) return "took under a minute";
+  if (s < 3600) return "took " + plural(Math.floor(s / 60), "minute");
+  return "took " + plural(Math.floor(s / 3600), "hour");
+}
+
+function recordedText(turn) {
+  const ended = new Date(turn.ended_at);
+  return ended.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) + " (" + ago(ended) + "), " + took(turn);
+}
+
+function totals(turn) {
+  let added = 0, deleted = 0;
+  for (const f of turn.files || []) { added += f.added; deleted += f.deleted; }
+  return [added, deleted];
+}
+
+function counts(added, deleted) {
+  const out = el("span", { class: "counts" });
+  if (added) out.append(el("span", { class: "add", text: "+" + added }));
+  if (added && deleted) out.append(" ");
+  if (deleted) out.append(el("span", { class: "del", text: "-" + deleted }));
+  return out;
+}
+
+function statusMark(status) {
+  const name = STATUS[status] || status;
+  return el("span", { class: "status " + status, title: name },
+    el("span", { "aria-hidden": "true", text: status }), el("span", { class: "sr-only", text: name }));
+}
+
+function fileName(path, oldPath) { return oldPath ? oldPath + " → " + path : path; }
+
+function hashID() {
+  const m = /^#turn-(\d+)$/.exec(location.hash);
+  return m ? Number(m[1]) : null;
+}
+
+function selectedID() {
+  const id = hashID();
+  return id !== null ? id : defaultID;
+}
+
+// ---------- the list ----------
+
+function matches(turn, words) {
+  if (!words.length) return true;
+  const hay = [String(turn.id), turn.description, turn.agent || "", turn.commit || "", turn.kind,
+    ...(turn.files || []).flatMap((f) => [f.path, f.old_path || ""])].join("\n").toLowerCase();
+  return words.every((word) => hay.includes(word));
+}
+
+function renderList() {
+  const words = $("filter").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const visible = turns.filter((t) => matches(t, words));
+  const list = $("turns");
+  if (turns.length) list.style.setProperty("--idw", String(turns[0].id).length + "ch");
+  list.replaceChildren(...visible.map((t) => {
+    const [added, deleted] = totals(t);
+    return el("li", null, el("a", { class: "turn", href: "#turn-" + t.id, "data-id": t.id },
+      el("span", { class: "turn-id", text: String(t.id) }),
+      el("span", { class: "turn-body" },
+        el("span", { class: "turn-desc", text: t.description }),
+        el("span", { class: "turn-meta" },
+          el("span", { text: when(new Date(t.ended_at)) }),
+          el("span", { text: plural((t.files || []).length, "file") }),
+          added || deleted ? counts(added, deleted) : null,
+          t.agent ? el("span", { class: "chip", text: t.agent }) : null,
+          t.kind !== "session" ? el("span", { class: "chip", text: t.kind }) : null))));
+  }));
+  markCurrent();
+  const empty = $("empty");
+  if (!turns.length) {
+    empty.replaceChildren("No turns yet. Run ", el("code", { text: "turnback start" }), " before you prompt your agent and ",
+      el("code", { text: "turnback end" }), " when it is done, or ", el("code", { text: "turnback hook install" }),
+      " to record every commit. New turns show up here on their own.");
+  } else if (!visible.length) {
+    empty.textContent = "No turns match the filter.";
+  }
+  empty.hidden = visible.length > 0;
+  list.hidden = !visible.length;
+}
+
+function markCurrent() {
+  const id = selectedID();
+  for (const a of document.querySelectorAll(".turn")) {
+    if (Number(a.dataset.id) === id) a.setAttribute("aria-current", "true");
+    else a.removeAttribute("aria-current");
+  }
+}
+
+function currentLink() { return document.querySelector(".turn[aria-current]"); }
+
+// ---------- diffs ----------
+
+// unquote decodes a path git wrote in C-style quotes, as in "a\tb".
+function unquote(s) {
+  if (!(s.length > 1 && s.startsWith('"') && s.endsWith('"'))) return s;
+  const bytes = [];
+  const utf8 = new TextEncoder();
+  for (let i = 1; i < s.length - 1; i++) {
+    if (s[i] !== "\\") { bytes.push(...utf8.encode(s[i])); continue; }
+    const c = s[++i];
+    if (c >= "0" && c <= "7") { bytes.push(parseInt(s.slice(i, i + 3), 8)); i += 2; continue; }
+    const named = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13 }[c];
+    bytes.push(named !== undefined ? named : c.charCodeAt(0));
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
+// headerPath reads the path from "diff --git a/X b/X". Both halves are the
+// same unless the file was renamed, and renames name the path again below.
+function headerPath(line) {
+  const rest = line.slice("diff --git ".length);
+  const half = (rest.length - 1) / 2;
+  const b = Number.isInteger(half) ? unquote(rest.slice(half + 1)) : rest;
+  return b.replace(/^b\//, "");
+}
+
+function parseDiff(diff) {
+  const files = [];
+  let file = null;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("diff --git ")) {
+      file = { path: headerPath(line), oldPath: "", status: "M", head: [], lines: [], added: 0, deleted: 0 };
+      files.push(file);
+      continue;
+    }
+    if (!file) continue;
+    if (!file.lines.length && !line.startsWith("@@")) {
+      if (line.startsWith("rename from ")) { file.oldPath = unquote(line.slice(12)); file.status = "R"; }
+      else if (line.startsWith("rename to ")) file.path = unquote(line.slice(10));
+      else if (line.startsWith("new file mode ")) { file.status = "A"; if (!line.endsWith(" 100644")) file.head.push(line); }
+      else if (line.startsWith("deleted file mode ")) { file.status = "D"; if (!line.endsWith(" 100644")) file.head.push(line); }
+      else if (line.startsWith("Binary files ")) file.head.push("Binary file, contents not shown");
+      else if (line && !/^(index |--- |\+\+\+ )/.test(line)) file.head.push(line);
+      continue;
+    }
+    if (line.startsWith("+")) file.added++;
+    else if (line.startsWith("-")) file.deleted++;
+    file.lines.push(line);
+  }
+  for (const f of files) while (f.lines.length && f.lines[f.lines.length - 1] === "") f.lines.pop();
+  return files;
+}
+
+function row(kind, a, b, mark, text) {
+  const r = document.createElement("div");
+  r.className = "row " + kind;
+  const na = document.createElement("span");
+  na.className = "no";
+  if (a) na.dataset.n = a;
+  const nb = document.createElement("span");
+  nb.className = "no";
+  if (b) nb.dataset.n = b;
+  const tx = document.createElement("span");
+  tx.className = "tx";
+  tx.dataset.mk = mark;
+  tx.textContent = text;
+  r.append(na, nb, tx);
+  return r;
+}
+
+// diffView draws a file's diff with line numbers, a part at a time: more(n)
+// adds up to n lines and returns how many are left.
+function diffView(file) {
+  const rows = el("div", { class: "rows" });
+  const code = el("div", { class: "code" }, rows);
+  for (const line of file.head) rows.append(row("meta", 0, 0, "", line));
+  let last = 1;
+  for (const line of file.lines) {
+    const m = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
+    if (m) last = Math.max(last, Number(m[1]) + Number(m[2] || 1), Number(m[3]) + Number(m[4] || 1));
+  }
+  code.style.setProperty("--nw", Math.max(3, String(last).length) + "ch");
+  let i = 0, a = 0, b = 0;
+  const more = (count) => {
+    const end = Math.min(file.lines.length, i + count);
+    const part = document.createDocumentFragment();
+    for (; i < end; i++) {
+      const line = file.lines[i];
+      const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+      if (hunk) {
+        a = Number(hunk[1]);
+        b = Number(hunk[2]);
+        part.append(row("hunk", 0, 0, "", line));
+      } else if (line.startsWith("+")) {
+        part.append(row("ins", 0, b++, "+", line.slice(1)));
+      } else if (line.startsWith("-")) {
+        part.append(row("rem", a++, 0, "-", line.slice(1)));
+      } else if (line.startsWith("\\")) {
+        part.append(row("meta", 0, 0, "", line.slice(2)));
+      } else {
+        part.append(row("ctx", a++, b++, " ", line.slice(1)));
+      }
+    }
+    rows.append(part);
+    return file.lines.length - i;
+  };
+  return { code, more };
+}
+
+function fileBlock(file, index, open) {
+  const block = el("details", { class: "file", id: "file-" + index },
+    el("summary", null, statusMark(file.status), el("span", { class: "path", text: fileName(file.path, file.oldPath) }),
+      counts(file.added, file.deleted)));
+  let drawn = false;
+  const draw = () => {
+    if (drawn) return;
+    drawn = true;
+    if (!file.head.length && !file.lines.length) {
+      block.append(el("p", { class: "hint", text: file.status === "A" || file.status === "D" ? "Empty file." : "No lines changed." }));
+      return;
+    }
+    const view = diffView(file);
+    block.append(view.code);
+    let left = view.more(FILE_LINES);
+    if (left > 0) {
+      const button = el("button", { class: "more", type: "button" });
+      const label = () => { button.textContent = "Show " + Math.min(left, MORE_LINES) + " more lines (" + left + " left)"; };
+      label();
+      button.addEventListener("click", () => {
+        left = view.more(MORE_LINES);
+        if (left > 0) label();
+        else { block.querySelector("summary").focus({ preventScroll: true }); button.remove(); }
+      });
+      block.append(button);
+    }
+  };
+  block.addEventListener("toggle", () => { if (block.open) draw(); });
+  if (open) { block.open = true; draw(); }
+  return block;
+}
+
+// ---------- the detail ----------
+
+function undoBox(turn) {
+  const command = "turnback undo " + turn.id;
+  const code = el("code", { text: command });
+  const copy = el("button", { type: "button", text: "Copy" });
+  const said = el("span", { class: "sr-only", "aria-live": "polite" });
+  copy.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      copy.textContent = "Copied";
+      said.textContent = "Copied " + command;
+    } catch (_) {
+      // No clipboard access: select the command and try the older way.
+      const range = document.createRange();
+      range.selectNodeContents(code);
+      getSelection().removeAllRanges();
+      getSelection().addRange(range);
+      let done = false;
+      try { done = document.execCommand("copy"); } catch (_) { /* unsupported */ }
+      copy.textContent = done ? "Copied" : /Mac|iPhone|iPad/.test(navigator.userAgent) ? "Press ⌘C" : "Press Ctrl+C";
+      if (done) said.textContent = "Copied " + command;
+    }
+    setTimeout(() => { copy.textContent = "Copy"; said.textContent = ""; }, 1800);
+  });
+  const explain = turn.kind === "undo"
+    ? "Undoing an undo brings back what it took out. turnback shows what would change and asks before it writes anything."
+    : "Run it in the repository. turnback shows what would change and asks before it writes anything. Add --file <path> to undo only some files.";
+  return el("div", { class: "undo" }, code, copy, said, el("p", { text: explain }));
+}
+
+async function renderDetail(id, focus) {
+  shownID = id;
+  recorded = null;
+  const content = $("content");
+  if (id === null) {
+    content.replaceChildren(el("p", { class: "hint", text: "Recorded turns will show up here." }));
+    return;
+  }
+  const ticket = ++loads;
+  if (narrow.matches) content.replaceChildren();
+  const slow = setTimeout(() => {
+    if (ticket === loads) content.replaceChildren(el("p", { class: "hint", text: "Loading turn " + id + "…" }));
+  }, 200);
+  let turn;
+  try {
+    turn = await api("/api/turns/" + id);
+  } catch (err) {
+    clearTimeout(slow);
+    if (ticket !== loads) return;
+    const missing = err instanceof APIError && err.status === 404;
+    if (!missing) shownID = null; // try again on the next refresh
+    content.replaceChildren(el("p", { class: "hint", text: missing ? "There is no turn " + id + "." : "Could not load turn " + id + ": " + err.message }));
+    return;
+  }
+  clearTimeout(slow);
+  if (ticket !== loads) return;
+
+  recorded = { node: el("dd", { text: recordedText(turn) }), turn };
+  const facts = el("dl", { class: "facts" }, el("dt", { text: "Recorded" }), recorded.node);
+  if (turn.agent) facts.append(el("dt", { text: "Agent" }), el("dd", { text: turn.agent }));
+  if (turn.commit) facts.append(el("dt", { text: "Commit" }), el("dd", null, el("code", { text: turn.commit.slice(0, 7) })));
+  if (turn.undoes) {
+    const dd = el("dd", null, el("a", { href: "#turn-" + turn.undoes.turn, text: "turn " + turn.undoes.turn }));
+    if (turn.undoes.paths && turn.undoes.paths.length) dd.append(" (" + turn.undoes.paths.join(", ") + ")");
+    facts.append(el("dt", { text: "Undoes" }), dd);
+  }
+
+  const changed = turn.files || [];
+  const files = parseDiff(turn.diff || "");
+  const list = el("ul", { class: "files" }, ...changed.map((f) => {
+    const index = files.findIndex((d) => d.path === f.path);
+    const name = index >= 0
+      ? el("a", { href: "#file-" + index, "data-file": index, text: fileName(f.path, f.old_path) })
+      : el("span", { class: "name", text: fileName(f.path, f.old_path) });
+    const right = f.ignored ? el("span", { class: "counts", text: "now ignored by git, still on disk" })
+      : f.binary ? el("span", { class: "counts", text: "binary" }) : counts(f.added, f.deleted);
+    return el("li", null, statusMark(f.status), name, right);
+  }));
+  list.addEventListener("click", (e) => {
+    const a = e.target.closest("a[data-file]");
+    if (!a) return;
+    e.preventDefault();
+    const block = $("file-" + a.dataset.file);
+    if (!block) return;
+    const reveal = () => {
+      block.scrollIntoView({ block: "start" });
+      block.querySelector("summary").focus({ preventScroll: true });
+    };
+    // A closed file draws its diff when it opens; scroll once that is done.
+    if (block.open) reveal();
+    else { block.addEventListener("toggle", reveal, { once: true }); block.open = true; }
+  });
+
+  const diff = el("section", { "aria-label": "Changes" });
+  if (turn.truncated) {
+    diff.append(el("p", { class: "note" }, "This diff is too large to show in full, so only its start is here. Run ",
+      el("code", { text: "turnback show " + turn.id }), " to see all of it."));
+  }
+  let budget = EAGER_LINES;
+  files.forEach((f, i) => {
+    diff.append(fileBlock(f, i, budget > 0));
+    budget -= Math.min(f.lines.length, FILE_LINES) + f.head.length;
+  });
+  if (!files.length) diff.append(el("p", { class: "hint", text: "This turn changed no file contents." }));
+
+  const [added, deleted] = totals(turn);
+  let summary = plural(changed.length, "file") + " changed";
+  if (added || deleted) summary += "," + (added ? " +" + added : "") + (deleted ? " -" + deleted : "");
+  const heading = el("h1", { tabindex: "-1" }, el("span", { class: "tid", text: "turn " + turn.id }), el("span", { text: turn.description }));
+  content.replaceChildren(heading, facts, undoBox(turn), el("h2", { text: summary }), list, diff);
+  $("detail").scrollTop = 0;
+  if (focus) heading.focus({ preventScroll: true });
+}
+
+// ---------- state, refresh and navigation ----------
+
+function renderState(state) {
+  $("repo").textContent = state.repo;
+  document.title = state.repo + " · turnback";
+  const rec = state.recording;
+  if (rec) {
+    const since = new Date(rec.started_at);
+    $("recording-text").textContent = "Recording a turn since " + clock(since) + (rec.description ? ": " + rec.description : "");
+    $("recording").title = "Started " + ago(since) + (rec.agent ? " for " + rec.agent : "");
+  }
+  $("recording").hidden = !rec;
+  $("hook").hidden = !state.hook;
+}
+
+function showBanner(err) {
+  let text = "Lost the connection to turnback ui. Is it still running? Start it again with 'turnback ui'.";
+  if (err instanceof APIError) {
+    text = err.status === 403
+      ? "This page belongs to an earlier run of turnback ui. Open the address it printed this time."
+      : "turnback could not read its records: " + err.message;
+  }
+  const banner = $("banner");
+  if (banner.textContent !== text) banner.textContent = text;
+  banner.hidden = false;
+}
+
+async function refresh(force) {
+  try {
+    const state = await api("/api/state");
+    renderState(state);
+    const now = state.turns + ":" + state.latest;
+    if (force || now !== seen) {
+      turns = await api("/api/turns");
+      seen = now;
+      if (!turns.some((t) => t.id === defaultID)) defaultID = turns.length ? turns[0].id : null;
+      renderList();
+    }
+    $("banner").hidden = true;
+  } catch (err) {
+    showBanner(err);
+    return;
+  }
+  if (recorded) recorded.node.textContent = recordedText(recorded.turn);
+  const id = selectedID();
+  if (force || id !== shownID) await renderDetail(id, false);
+}
+
+function route() {
+  const id = hashID();
+  if (id === null && shownID !== null) defaultID = shownID;
+  document.body.classList.toggle("show-detail", id !== null);
+  markCurrent();
+  if (selectedID() !== shownID) renderDetail(selectedID(), narrow.matches && id !== null);
+}
+
+// move selects the turn step places after the current one in the list.
+function move(step) {
+  const links = [...document.querySelectorAll(".turn")];
+  if (!links.length) return;
+  const at = links.indexOf(currentLink());
+  const next = links[at < 0 ? 0 : Math.max(0, Math.min(links.length - 1, at + step))];
+  history.replaceState(null, "", "#turn-" + next.dataset.id);
+  route();
+  next.focus({ preventScroll: true });
+  next.scrollIntoView({ block: "nearest" });
+}
+
+window.addEventListener("hashchange", () => {
+  openedFromList = listClick && hashID() !== null;
+  listClick = false;
+  route();
+});
+$("turns").addEventListener("click", (e) => { if (e.target.closest(".turn")) listClick = true; });
+$("back").addEventListener("click", (e) => {
+  e.preventDefault();
+  if (openedFromList) history.back();
+  else location.hash = "";
+  setTimeout(() => { const link = currentLink(); if (link) link.focus(); }, 50);
+});
+$("filter").addEventListener("input", renderList);
+$("filter").addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (e.target.value) { e.target.value = ""; renderList(); } else e.target.blur();
+  } else if (e.key === "ArrowDown" || e.key === "Enter") {
+    e.preventDefault();
+    const link = currentLink() || document.querySelector(".turn");
+    if (link) link.focus();
+  }
+});
+$("turns").addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown") { e.preventDefault(); move(1); }
+  if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.matches("input, textarea")) return;
+  if (e.key === "/") { e.preventDefault(); $("filter").focus(); }
+  else if (e.key === "j") move(1);
+  else if (e.key === "k") move(-1);
+});
+$("refresh").addEventListener("click", () => refresh(true));
+
+function setWrap(on) {
+  document.body.classList.toggle("wrap", on);
+  $("wrap").setAttribute("aria-pressed", String(on));
+  try { localStorage.setItem("turnback.wrap", on ? "1" : ""); } catch (_) { /* storage is optional */ }
+}
+$("wrap").addEventListener("click", () => setWrap(!document.body.classList.contains("wrap")));
+try { setWrap(localStorage.getItem("turnback.wrap") === "1"); } catch (_) { setWrap(false); }
+
+// New turns show up on their own while the page is visible.
+setInterval(() => { if (document.visibilityState === "visible") refresh(false); }, 4000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(false); });
+document.body.classList.toggle("show-detail", hashID() !== null);
+refresh(true);
+</script>
 </body>
 </html>
