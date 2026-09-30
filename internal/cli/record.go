@@ -77,7 +77,7 @@ func runStart(env *Env, args []string) error {
 	}
 	title := "Recording a new turn"
 	if desc != "" {
-		title += ": " + desc
+		title += ": " + shownText(desc)
 	}
 	fmt.Fprintf(env.Stdout, "%s (snapshot of %s).\n", title, plural(res.Files, "file"))
 	fmt.Fprintln(env.Stdout, "Run 'turnback end' when the agent is done.")
@@ -113,7 +113,7 @@ func runEnd(env *Env, args []string) error {
 		fmt.Fprintln(env.Stdout, "Nothing changed since 'turnback start'. No turn recorded.")
 	default:
 		t := res.Turn
-		fmt.Fprintf(env.Stdout, "%s: %s\n", env.paint(bold, fmt.Sprintf("Recorded turn %d", t.ID)), t.Description)
+		fmt.Fprintf(env.Stdout, "%s: %s\n", env.paint(bold, fmt.Sprintf("Recorded turn %d", t.ID)), shownText(t.Description))
 		printFiles(env, t.Files)
 		added, deleted := t.Lines()
 		fmt.Fprintf(env.Stdout, "%s changed, +%d -%d\n", plural(len(t.Files), "file"), added, deleted)
@@ -147,7 +147,7 @@ func runStatus(env *Env, args []string) error {
 	if s := st.Session; s != nil {
 		line := fmt.Sprintf("Recording a turn since %s (%s)", clockTime(now, s.StartedAt), ago(now, s.StartedAt))
 		if s.Description != "" {
-			line += ": " + s.Description
+			line += ": " + shownText(s.Description)
 		}
 		fmt.Fprintln(env.Stdout, line)
 		if len(st.Pending) == 0 {
@@ -162,7 +162,7 @@ func runStatus(env *Env, args []string) error {
 	}
 	if st.Latest != nil {
 		fmt.Fprintf(env.Stdout, "%s recorded. Latest: turn %d, %s (%s).\n",
-			plural(st.Turns, "turn"), st.Latest.ID, st.Latest.Description, ago(now, st.Latest.EndedAt))
+			plural(st.Turns, "turn"), st.Latest.ID, shownText(st.Latest.Description), ago(now, st.Latest.EndedAt))
 	} else {
 		fmt.Fprintln(env.Stdout, "No turns recorded yet.")
 	}

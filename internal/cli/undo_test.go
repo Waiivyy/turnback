@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
@@ -255,4 +256,56 @@ func TestUndoSummaryCountsEveryFileWritten(t *testing.T) {
 	if !strings.Contains(stdout, "Undid turn 1: 2 files changed") {
 		t.Errorf("summary for undoing a rename:\n%s", stdout)
 	}
+}
+
+func TestNothingToUndoSaysWhyWhenTurnbackCannotChangeTheFiles(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write("keep.txt", "k\n")
+	repo.Commit("initial")
+	lib := repo.Path("lib")
+	if err := os.MkdirAll(lib, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitIn := func(args ...string) {
+		t.Helper()
+		if out, err := execIn(lib, args...); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	gitIn("init", "-q")
+	gitIn("commit", "-q", "--allow-empty", "-m", "v1")
+	record(t, repo, "Move lib to v2", func() { gitIn("commit", "-q", "--allow-empty", "-m", "v2") })
+
+	code, stdout, _ := run(t, repo.Dir, "undo", "1")
+	if code != 0 || strings.Contains(stdout, "already as it was before turn 1.") ||
+		!strings.Contains(stdout, "Nothing to undo: turnback cannot change the files turn 1 changed") {
+		t.Errorf("exit %d, output:\n%s", code, stdout)
+	}
+}
+
+func TestFileNamesWithControlCharactersAreShownEscaped(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not allow control characters in file names")
+	}
+	repo := testutil.NewRepo(t)
+	repo.Commit("initial")
+	name := "evil\r\x1b[2Kname.txt"
+	record(t, repo, "Add an odd file", func() { repo.Write(name, "x\n") })
+	for _, args := range [][]string{{"undo", "1"}, {"show", "1", "--stat"}} {
+		_, stdout, _ := run(t, repo.Dir, args...)
+		if strings.ContainsAny(stdout, "\r\x1b") {
+			t.Errorf("%v prints raw control characters:\n%q", args, stdout)
+		}
+		if !strings.Contains(stdout, `"evil\r\x1b[2Kname.txt"`) {
+			t.Errorf("%v does not show the escaped name:\n%s", args, stdout)
+		}
+	}
+}
+
+// execIn runs git in dir.
+func execIn(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }

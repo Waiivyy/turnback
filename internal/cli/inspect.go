@@ -161,9 +161,9 @@ func printLog(env *Env, turns []*store.Turn, now time.Time) {
 			fmt.Sprintf("+%d -%d", added, deleted),
 		}
 		if withAgent {
-			row = append(row, t.Agent)
+			row = append(row, shownText(t.Agent))
 		}
-		rows = append(rows, append(row, t.Description))
+		rows = append(rows, append(row, shownText(t.Description)))
 	}
 	widths := make([]int, len(header))
 	for _, row := range rows {
@@ -320,11 +320,11 @@ func runShow(env *Env, args []string) error {
 // printTurn prints a turn's header and the files it changed, or the subset
 // of them given in shown.
 func printTurn(env *Env, t *store.Turn, shown []store.File, now time.Time) {
-	fmt.Fprintf(env.Stdout, "%s  %s\n", env.paint(boldYellow, fmt.Sprintf("turn %d", t.ID)), t.Description)
+	fmt.Fprintf(env.Stdout, "%s  %s\n", env.paint(boldYellow, fmt.Sprintf("turn %d", t.ID)), shownText(t.Description))
 	fmt.Fprintf(env.Stdout, "Recorded  %s (%s), %s\n",
 		t.EndedAt.Local().Format("2006-01-02 15:04"), ago(now, t.EndedAt), took(t.EndedAt.Sub(t.StartedAt)))
 	if t.Agent != "" {
-		fmt.Fprintf(env.Stdout, "Agent     %s\n", t.Agent)
+		fmt.Fprintf(env.Stdout, "Agent     %s\n", shownText(t.Agent))
 	}
 	if u := t.Undoes; u != nil {
 		line := fmt.Sprintf("Undoes    turn %d", u.Turn)

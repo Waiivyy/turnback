@@ -79,7 +79,11 @@ func runUndo(env *Env, args []string) error {
 			withHint("Undo the later turns first, or leave the conflicting files out and undo the others with --file.")
 	}
 	if plan.Writes() == 0 {
-		fmt.Fprintf(env.Stdout, "Nothing to undo: every file is already as it was before turn %d.\n", turn.ID)
+		if alreadyUndone(plan) {
+			fmt.Fprintf(env.Stdout, "Nothing to undo: every file is already as it was before turn %d.\n", turn.ID)
+		} else {
+			fmt.Fprintf(env.Stdout, "Nothing to undo: turnback cannot change the files turn %d changed, for the reasons listed above.\n", turn.ID)
+		}
 		return nil
 	}
 	fmt.Fprintln(env.Stdout)
@@ -125,6 +129,17 @@ func runUndo(env *Env, args []string) error {
 	return nil
 }
 
+// alreadyUndone reports whether every file was skipped because it already
+// matches its state from before the turn.
+func alreadyUndone(p *app.UndoPlan) bool {
+	for _, f := range p.Files {
+		if f.Action != app.UndoSkip || !strings.HasPrefix(f.Reason, "already as it was before turn") {
+			return false
+		}
+	}
+	return true
+}
+
 var undoLetters = map[string]string{
 	app.UndoRevert: "M", app.UndoMerge: "M", app.UndoRestore: "A",
 	app.UndoDelete: "D", app.UndoSkip: " ", app.UndoConflict: "!",
@@ -137,16 +152,17 @@ var undoStyles = map[string]string{
 
 // printUndoPlan lists what the undo would do with each file.
 func printUndoPlan(env *Env, p *app.UndoPlan) {
-	fmt.Fprintln(env.Stdout, env.paint(bold, fmt.Sprintf("Undo turn %d: %s", p.Turn.ID, p.Turn.Description)))
+	fmt.Fprintln(env.Stdout, env.paint(bold, fmt.Sprintf("Undo turn %d: %s", p.Turn.ID, shownText(p.Turn.Description))))
 	fmt.Fprintln(env.Stdout)
 	width := 0
 	for _, f := range p.Files {
-		width = max(width, utf8.RuneCountInString(f.Path))
+		width = max(width, utf8.RuneCountInString(shownPath(f.Path)))
 	}
 	width = min(width, 60)
 	for _, f := range p.Files {
-		pad := strings.Repeat(" ", max(width-utf8.RuneCountInString(f.Path), 0))
-		line := fmt.Sprintf("  %s  %s%s  %s", env.paint(undoStyles[f.Action], undoLetters[f.Action]), f.Path, pad,
+		name := shownPath(f.Path)
+		pad := strings.Repeat(" ", max(width-utf8.RuneCountInString(name), 0))
+		line := fmt.Sprintf("  %s  %s%s  %s", env.paint(undoStyles[f.Action], undoLetters[f.Action]), name, pad,
 			describeUndo(p, f))
 		if f.Dirty {
 			line += " " + env.paint(red, "(unsaved changes)")
@@ -227,7 +243,7 @@ func keptChanges(f app.UndoFile) string {
 func printConflictDetails(env *Env, p *app.UndoPlan) {
 	fmt.Fprintln(env.Stdout)
 	for _, f := range p.Conflicts() {
-		fmt.Fprintln(env.Stdout, env.paint(bold, f.Path))
+		fmt.Fprintln(env.Stdout, env.paint(bold, shownPath(f.Path)))
 		var who []string
 		switch len(f.Later) {
 		case 0:

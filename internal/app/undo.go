@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -176,8 +177,8 @@ func (a *App) plan(sh *shadow.Repo, t *store.Turn, current string, limit []strin
 			cur = now[c.Path]
 		}
 		f := UndoFile{Path: c.Path}
-		if cur == nil && a.onDisk(c.Path) {
-			// Not in the snapshot but on disk: git ignores it now.
+		if cur == nil && a.fileOnDisk(c.Path) {
+			// A file on disk that is not in the snapshot: git ignores it now.
 			f.Action, f.Reason = UndoSkip, "git ignores it now, and turnback leaves ignored files alone"
 			p.Files = append(p.Files, f)
 			continue
@@ -196,6 +197,12 @@ func (a *App) plan(sh *shadow.Repo, t *store.Turn, current string, limit []strin
 	// clears the way.
 	if err := a.checkRoom(sh, p, targets, current); err != nil {
 		return nil, err
+	}
+	for i := range p.Files {
+		f := &p.Files[i]
+		if name := a.spelledOnDisk(f.Path); f.Action == UndoConflict && name != "" {
+			f.Reason += fmt.Sprintf(" (on disk it is spelled %s, and this file system does not tell names apart by case)", name)
+		}
 	}
 	sort.Slice(p.Files, func(i, j int) bool { return p.Files[i].Path < p.Files[j].Path })
 
@@ -318,10 +325,27 @@ func decide(sh *shadow.Repo, t *store.Turn, f *UndoFile, before, after, cur *sha
 	return target, nil
 }
 
-// onDisk reports whether anything exists at a repository path.
-func (a *App) onDisk(path string) bool {
-	_, err := os.Lstat(filepath.Join(a.Root, filepath.FromSlash(path)))
-	return err == nil
+// fileOnDisk reports whether a file or symlink (not a folder) exists at a
+// repository path.
+func (a *App) fileOnDisk(path string) bool {
+	fi, err := os.Lstat(filepath.Join(a.Root, filepath.FromSlash(path)))
+	return err == nil && !fi.IsDir()
+}
+
+// spelledOnDisk returns the name a file really has on disk when it differs
+// from path only by case, as it can on case-insensitive file systems.
+func (a *App) spelledOnDisk(path string) string {
+	dir, base := filepath.Split(filepath.Join(a.Root, filepath.FromSlash(path)))
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if e.Name() != base && strings.EqualFold(e.Name(), base) {
+			return e.Name()
+		}
+	}
+	return ""
 }
 
 // merge3 merges a file mode the way git does: keep a change made on one
@@ -391,15 +415,54 @@ func (a *App) obstacle(path string, list []string, tracked, removed map[string]b
 	if err != nil {
 		return ""
 	}
-	if !fi.IsDir() {
+	if !fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
+		for _, other := range list {
+			if other != path && strings.EqualFold(other, path) && !removed[other] {
+				return fmt.Sprintf("cannot bring it back: %s is in the way, and this file system does not tell names apart by case", other)
+			}
+		}
 		return "cannot bring it back: a file git does not track, probably an ignored one, is in the way"
 	}
-	for _, other := range list {
-		if strings.HasPrefix(other, path+"/") && !removed[other] {
-			return "cannot bring it back: a folder with that name is in the way"
-		}
+	if !a.clearable(path, removed) {
+		return "cannot bring it back: a folder with that name is in the way"
 	}
 	return ""
+}
+
+// clearable reports whether the folder at path disappears once the undo
+// deletes the files it removes: every file in it must be a tracked file
+// the undo deletes, and every folder in it must hold at least one, because
+// git only removes folders it empties.
+func (a *App) clearable(path string, removed map[string]bool) bool {
+	holds := make(map[string]bool) // folders that contain a removed file
+	for r := range removed {
+		parts := strings.Split(r, "/")
+		for i := 1; i < len(parts); i++ {
+			holds[strings.Join(parts[:i], "/")] = true
+		}
+	}
+	if !holds[path] {
+		return false
+	}
+	root := filepath.Join(a.Root, filepath.FromSlash(path))
+	ok := true
+	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			ok = false
+			return filepath.SkipAll
+		}
+		rel, _ := filepath.Rel(root, p)
+		if rel == "." {
+			return nil
+		}
+		rel = path + "/" + filepath.ToSlash(rel)
+		if d.IsDir() && !holds[rel] || !d.IsDir() && !removed[rel] {
+			ok = false
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return ok
 }
 
 // history lists the later turns that changed path, and whether it also

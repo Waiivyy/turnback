@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -730,5 +731,52 @@ func TestUndoAndShowATurnTooBigForACommandLine(t *testing.T) {
 	applyUndo(t, a, p, false)
 	if repo.Exists("generated") || repo.Read("keep.txt") != "k\n" {
 		t.Errorf("generated/ exists = %v, keep.txt = %q", repo.Exists("generated"), repo.Read("keep.txt"))
+	}
+}
+
+func TestAFolderOfIgnoredFilesBlocksARestoreAtPlanTime(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write(".gitignore", "*.log\n")
+	repo.Write("utils", "a file\n")
+	repo.Commit("initial")
+	a := openApp(t, repo)
+	turn(t, a, "Make utils a folder", func() {
+		repo.Remove("utils")
+		repo.Write("utils/index.ts", "export {}\n")
+	})
+	repo.Write("utils/debug.log", "ignored noise\n")
+
+	f := planned(t, planUndo(t, a, 1), "utils")
+	if f.Action != app.UndoConflict || !strings.Contains(f.Reason, "folder") {
+		t.Errorf("utils plan = %+v, want a conflict about the folder in the way", f)
+	}
+}
+
+// caseInsensitive reports whether dir's file system ignores case.
+func caseInsensitive(t *testing.T, dir string) bool {
+	t.Helper()
+	probe := filepath.Join(dir, "CaseProbe")
+	if err := os.WriteFile(probe, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(probe)
+	_, err := os.Lstat(filepath.Join(dir, "caseprobe"))
+	return err == nil
+}
+
+func TestACaseOnlyNameClashIsExplained(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	if !caseInsensitive(t, repo.Dir) {
+		t.Skip("the file system tells upper and lower case apart")
+	}
+	repo.Write("Makefile", "all:\n")
+	repo.Commit("initial")
+	a := openApp(t, repo)
+	turn(t, a, "Drop the Makefile", func() { repo.Remove("Makefile") })
+	turn(t, a, "Add a lowercase one", func() { repo.Write("makefile", "build:\n") })
+
+	f := planned(t, planUndo(t, a, 1), "Makefile")
+	if f.Action != app.UndoConflict || !strings.Contains(f.Reason, "makefile") || !strings.Contains(f.Reason, "case") {
+		t.Errorf("Makefile plan = %+v, want a conflict naming makefile and case", f)
 	}
 }

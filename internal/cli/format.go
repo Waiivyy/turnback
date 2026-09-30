@@ -3,8 +3,10 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/Waiivyy/turnback/internal/app"
@@ -38,9 +40,9 @@ func printFiles(env *Env, files []store.File) {
 	names := make([]string, len(files))
 	width := 0
 	for i, f := range files {
-		names[i] = f.Path
+		names[i] = shownPath(f.Path)
 		if f.OldPath != "" {
-			names[i] = f.OldPath + " -> " + f.Path
+			names[i] = shownPath(f.OldPath) + " -> " + shownPath(f.Path)
 		}
 		width = max(width, utf8.RuneCountInString(names[i]))
 	}
@@ -75,6 +77,29 @@ func joinAnd(items []string) string {
 		return strings.Join(items, "")
 	}
 	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+}
+
+// shownPath makes a file name safe to print. Names with control characters,
+// which could move the cursor and rewrite earlier lines, are shown quoted
+// with escapes.
+func shownPath(p string) string {
+	if !unsafeText(p) {
+		return p
+	}
+	return strconv.Quote(p)
+}
+
+// shownText escapes control characters in free text, such as descriptions.
+func shownText(s string) string {
+	if !unsafeText(s) {
+		return s
+	}
+	q := strconv.Quote(s)
+	return q[1 : len(q)-1]
+}
+
+func unsafeText(s string) bool {
+	return !utf8.ValidString(s) || strings.IndexFunc(s, unicode.IsControl) >= 0
 }
 
 // plural formats a count with its unit, such as "1 file" or "3 files".
