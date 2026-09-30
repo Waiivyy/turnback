@@ -29,6 +29,10 @@ import (
 //go:embed index.html
 var page string
 
+// maxDiff is the most diff text sent for one turn. Beyond it the page says
+// the diff was cut and points at 'turnback show'.
+var maxDiff = 16 << 20
+
 // Server is the web page and its JSON API for one repository.
 type Server struct {
 	app   *app.App
@@ -114,11 +118,14 @@ func (s *Server) servePage(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(strings.ReplaceAll(page, "{{nonce}}", nonce)))
 }
 
-// state is what the page's header shows.
+// state is what the page's header shows. The page polls it and loads the
+// turns again only when Turns or Latest change, which is cheap to check.
 type state struct {
 	Repo      string         `json:"repo"`
 	Recording *store.Session `json:"recording"`
 	Hook      bool           `json:"hook"`
+	Turns     int            `json:"turns"`
+	Latest    int            `json:"latest"`
 }
 
 func (s *Server) serveState(w http.ResponseWriter, r *http.Request) {
@@ -127,7 +134,16 @@ func (s *Server) serveState(w http.ResponseWriter, r *http.Request) {
 		serveError(w, err)
 		return
 	}
-	serveJSON(w, state{Repo: filepath.Base(s.app.Root), Recording: sess, Hook: s.app.HookInstalled()})
+	ids, err := s.app.Store.TurnIDs()
+	if err != nil {
+		serveError(w, err)
+		return
+	}
+	st := state{Repo: filepath.Base(s.app.Root), Recording: sess, Hook: s.app.HookInstalled(), Turns: len(ids)}
+	if len(ids) > 0 {
+		st.Latest = ids[len(ids)-1]
+	}
+	serveJSON(w, st)
 }
 
 func (s *Server) serveTurns(w http.ResponseWriter, r *http.Request) {
@@ -158,10 +174,15 @@ func (s *Server) serveTurn(w http.ResponseWriter, r *http.Request) {
 		serveError(w, err)
 		return
 	}
+	truncated := len(diff) > maxDiff
+	if truncated {
+		diff = diff[:strings.LastIndexByte(diff[:maxDiff], '\n')+1]
+	}
 	serveJSON(w, struct {
 		*store.Turn
-		Diff string `json:"diff"`
-	}{turn, diff})
+		Diff      string `json:"diff"`
+		Truncated bool   `json:"truncated,omitempty"`
+	}{turn, diff, truncated})
 }
 
 func serveJSON(w http.ResponseWriter, v any) {

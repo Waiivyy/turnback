@@ -159,3 +159,37 @@ func TestOnlyGetRequestsAreServed(t *testing.T) {
 		t.Errorf("POST: status %d, want 405", rec.Code)
 	}
 }
+
+func TestStateNamesTheLatestTurn(t *testing.T) {
+	h, token := served(t)
+	var state struct {
+		Turns  int `json:"turns"`
+		Latest int `json:"latest"`
+	}
+	rec := get(t, h, "/api/state", addr, token)
+	if err := json.Unmarshal(rec.Body.Bytes(), &state); err != nil || state.Turns != 2 || state.Latest != 2 {
+		t.Errorf("state = %+v, %v; want 2 turns, latest 2", state, err)
+	}
+}
+
+func TestLargeDiffsAreCutAtALineEnd(t *testing.T) {
+	h, token := served(t)
+	defer ui.SetMaxDiff(40)()
+	rec := get(t, h, "/api/turns/1", addr, token)
+	var turn struct {
+		Diff      string `json:"diff"`
+		Truncated bool   `json:"truncated"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &turn); err != nil {
+		t.Fatal(err)
+	}
+	if !turn.Truncated || len(turn.Diff) > 40 || !strings.HasSuffix(turn.Diff, "\n") {
+		t.Errorf("diff = %q, truncated %v; want at most 40 bytes ending in a newline", turn.Diff, turn.Truncated)
+	}
+	defer ui.SetMaxDiff(1 << 20)()
+	rec = get(t, h, "/api/turns/1", addr, token)
+	turn.Truncated = false
+	if err := json.Unmarshal(rec.Body.Bytes(), &turn); err != nil || turn.Truncated {
+		t.Errorf("a small diff was marked truncated (%v)", err)
+	}
+}

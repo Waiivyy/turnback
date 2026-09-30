@@ -251,6 +251,14 @@ func (s *Store) Turns() ([]*Turn, error) {
 	return turns, nil
 }
 
+// TurnIDs returns the ids of the recorded turns, lowest first, without
+// reading the turns themselves.
+func (s *Store) TurnIDs() ([]int, error) {
+	ids, err := s.turnIDs()
+	sort.Ints(ids)
+	return ids, err
+}
+
 func (s *Store) turnIDs() ([]int, error) {
 	entries, err := os.ReadDir(filepath.Join(s.Dir, "turns"))
 	if errors.Is(err, fs.ErrNotExist) {
