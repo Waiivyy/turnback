@@ -1,12 +1,16 @@
 package store_test
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -224,6 +228,87 @@ func TestLockLeftByADeadProcessIsCleared(t *testing.T) {
 	unlock, err := s.Lock(0)
 	if err != nil {
 		t.Fatalf("Lock with stale lock file: %v", err)
+	}
+	unlock()
+}
+
+func TestAStaleLockIsNeverHeldByTwoAtOnce(t *testing.T) {
+	s, _ := initStore(t)
+	for round := 0; round < 20; round++ {
+		dead := exec.Command("git", "--version")
+		if err := dead.Run(); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(s.Dir, "lock"), []byte(fmt.Sprintf("%d\n", dead.Process.Pid)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var holders, most int32
+		var wg sync.WaitGroup
+		for i := 0; i < 8; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				unlock, err := s.Lock(0)
+				if err != nil {
+					return
+				}
+				n := atomic.AddInt32(&holders, 1)
+				for {
+					m := atomic.LoadInt32(&most)
+					if n <= m || atomic.CompareAndSwapInt32(&most, m, n) {
+						break
+					}
+				}
+				time.Sleep(20 * time.Millisecond)
+				atomic.AddInt32(&holders, -1)
+				unlock()
+			}()
+		}
+		wg.Wait()
+		if most > 1 {
+			t.Fatalf("round %d: %d holders at once", round, most)
+		}
+	}
+}
+
+// TestHelperHoldLock is not a test: TestLockIsReleasedWhenItsHolderDies
+// runs the test binary with it to hold a lock in another process.
+func TestHelperHoldLock(t *testing.T) {
+	dir := os.Getenv("TURNBACK_LOCK_HELPER_DIR")
+	if dir == "" {
+		t.Skip("helper process only")
+	}
+	if _, err := (&store.Store{Dir: dir}).Lock(0); err != nil {
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	fmt.Println("locked")
+	time.Sleep(time.Minute)
+}
+
+func TestLockIsReleasedWhenItsHolderDies(t *testing.T) {
+	s, _ := initStore(t)
+	helper := exec.Command(os.Args[0], "-test.run=^TestHelperHoldLock$")
+	helper.Env = append(os.Environ(), "TURNBACK_LOCK_HELPER_DIR="+s.Dir)
+	out, err := helper.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := helper.Start(); err != nil {
+		t.Fatal(err)
+	}
+	line, _ := bufio.NewReader(out).ReadString('\n')
+	if strings.TrimSpace(line) != "locked" {
+		t.Fatalf("helper said %q", line)
+	}
+	if _, err := s.Lock(0); !errors.Is(err, store.ErrLocked) {
+		t.Fatalf("Lock while another process holds it: err = %v, want ErrLocked", err)
+	}
+	helper.Process.Kill()
+	helper.Wait()
+	unlock, err := s.Lock(time.Second)
+	if err != nil {
+		t.Fatalf("Lock after the holder died: %v", err)
 	}
 	unlock()
 }

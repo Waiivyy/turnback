@@ -1,9 +1,7 @@
 package store
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,47 +10,54 @@ import (
 )
 
 // Lock takes the lock that serializes turnback commands in this working
-// tree, waiting up to wait for another command to finish. A lock left behind
-// by a process that no longer exists is cleared automatically.
+// tree, waiting up to wait for another command to finish.
+//
+// It is an operating system lock on .turnback/lock, so it is released the
+// moment its holder exits, even if it crashes: there is never a stale lock
+// to clean up, and so no race between two processes cleaning one up. The
+// file itself is never deleted; that would let two processes lock two
+// different files of the same name.
 func (s *Store) Lock(wait time.Duration) (unlock func(), err error) {
 	path := filepath.Join(s.Dir, "lock")
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
+	if err != nil {
+		return nil, err
+	}
 	deadline := time.Now().Add(wait)
 	for {
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-		if err == nil {
-			fmt.Fprintf(f, "%d\n", os.Getpid())
+		ok, err := tryLock(f)
+		if err != nil {
 			f.Close()
-			return func() { os.Remove(path) }, nil
-		}
-		if !errors.Is(err, fs.ErrExist) {
 			return nil, err
 		}
-		pid, stale := inspectLock(path)
-		if stale {
-			os.Remove(path)
-			continue
+		if ok {
+			break
 		}
 		if time.Now().After(deadline) {
-			if pid > 0 {
-				return nil, fmt.Errorf("%w (pid %d); if it is not, delete %s", ErrLocked, pid, path)
+			f.Close()
+			if pid := lockHolder(path); pid > 0 {
+				return nil, fmt.Errorf("%w (pid %d)", ErrLocked, pid)
 			}
-			return nil, fmt.Errorf("%w; if it is not, delete %s", ErrLocked, path)
+			return nil, ErrLocked
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	// Note who holds the lock, for the message others see.
+	if err := f.Truncate(0); err == nil {
+		f.WriteAt([]byte(strconv.Itoa(os.Getpid())+"\n"), 0)
+	}
+	return func() {
+		unlockFile(f)
+		f.Close()
+	}, nil
 }
 
-// inspectLock returns the pid recorded in a lock file and whether the lock
-// is stale: its owner is gone, or it never got a pid and is old.
-func inspectLock(path string) (pid int, stale bool) {
+// lockHolder returns the pid written into the lock file, or 0.
+func lockHolder(path string) int {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return 0, false
+		return 0
 	}
-	pid, err = strconv.Atoi(strings.TrimSpace(string(b)))
-	if err != nil || pid <= 0 {
-		fi, statErr := os.Stat(path)
-		return 0, statErr == nil && time.Since(fi.ModTime()) > 10*time.Second
-	}
-	return pid, !processAlive(pid)
+	pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+	return pid
 }
