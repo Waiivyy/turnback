@@ -267,6 +267,8 @@ func (r *Repo) CountFiles(tree string) (int, error) {
 
 type rawEntry struct {
 	status, path, oldPath string
+	oldMode, newMode      string
+	oldID, newID          string
 }
 
 // parseRaw parses "git diff-tree -r -z --raw" output.
@@ -282,7 +284,11 @@ func parseRaw(out string) ([]rawEntry, error) {
 		if !strings.HasPrefix(meta, ":") || len(fields) != 5 || i+1 >= len(tokens) {
 			return nil, fmt.Errorf("unexpected diff output %q", meta)
 		}
-		e := rawEntry{status: fields[4][:1]}
+		e := rawEntry{
+			oldMode: fields[0], newMode: fields[1],
+			oldID: fields[2], newID: fields[3],
+			status: fields[4][:1],
+		}
 		i++
 		e.path = tokens[i]
 		if e.status == "R" || e.status == "C" {

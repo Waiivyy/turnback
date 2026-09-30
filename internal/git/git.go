@@ -39,6 +39,12 @@ func (e *Error) Error() string {
 	return name + ": " + msg
 }
 
+// With returns a copy of r that adds the given KEY=VALUE environment entries.
+func (r Runner) With(env ...string) Runner {
+	r.Env = append(append([]string{}, r.Env...), env...)
+	return r
+}
+
 // Run runs git with args and returns its standard output.
 func (r Runner) Run(args ...string) (string, error) {
 	out, err := r.RunInput(nil, args...)

@@ -76,7 +76,9 @@ turnback works on exactly the files `git add --all` would pick up: tracked
 files and untracked files that are not ignored. Ignored files such as
 `node_modules/`, `.env` or build output are never read into a snapshot and
 never written. Nothing outside the repository root is touched. An undo writes
-only paths that the undone turn changed.
+only paths that the undone turn changed, and never overwrites or writes
+through something git does not track: if an ignored file or a symlinked
+folder is in the way, the undo stops and says so.
 
 ## Undo
 
@@ -104,10 +106,18 @@ result as a tree in the private repository and shows the diff from the
 current state to that result. If any file conflicts, nothing is written; the
 report shows the conflicting lines and which later turns touched each file.
 
-Applying the plan runs `git read-tree -m -u` in the private repository. It
-writes only the changed paths and refuses if any of them changed on disk
-after the plan was made. The state just before the undo and the result are
-recorded as a new turn.
+Applying the plan happens in two phases, both in the private repository:
+
+1. Files that exist now are changed or deleted with `git read-tree -m -u`.
+   It writes only those paths, and refuses before writing anything if one
+   of them changed on disk after the plan was made.
+2. Files the undo brings back are created with `git checkout-index`, which
+   only creates a file where nothing exists yet, inside real folders.
+   `read-tree -u` is not used for this step because it silently replaces an
+   ignored file standing in the way, such as a `.env`.
+
+If the second phase cannot finish, the first one is rolled back. The state
+just before the undo and the result are recorded as a new turn.
 
 ## Safety rules
 
