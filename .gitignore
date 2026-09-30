@@ -1,0 +1,21 @@
+# Build output
+/turnback
+/turnback.exe
+/dist/
+/bin/
+
+# Test and profiling artifacts
+*.test
+*.out
+*.prof
+coverage.*
+
+# turnback's own state, when dogfooding it on this repo
+.turnback/
+
+# Editors and OS files
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
