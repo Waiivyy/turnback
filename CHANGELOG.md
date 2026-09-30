@@ -43,6 +43,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - `turnback end` and `turnback undo` failed with a git error when a turn had
   replaced a folder with a symbolic link or a submodule, or when a file name
   started with `:`. Such paths are now handled like any other.
+- An undo that failed partway, for example on a full disk, could leave a
+  partly written file behind while saying nothing was changed, and a git
+  process killed midway left a lock file that made every later command fail.
+  Partly written files are now removed, and turnback clears the locks its
+  own git commands leave behind.
 - Finding the files git ignores no longer searches the whole index once per
   file. A dry run for a turn that deleted 20,000 of 30,000 files went from
   about 4 seconds to under half a second.

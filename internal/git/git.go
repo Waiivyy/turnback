@@ -19,6 +19,9 @@ type Runner struct {
 	Opts   []string // global options placed before the subcommand, e.g. "--git-dir=..."
 	Env    []string // extra KEY=VALUE environment entries
 	Detach bool     // run git outside the terminal's process group, immune to Ctrl-C
+	// Killed, if set, is called when a signal kills a command. git cannot
+	// remove its lock files then, so the caller may need to.
+	Killed func()
 }
 
 // Error is returned when git exits with a non-zero status.
@@ -70,6 +73,9 @@ func (r Runner) RunInput(stdin []byte, args ...string) ([]byte, error) {
 	if err := cmd.Run(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
+			if exitErr.ExitCode() == -1 && r.Killed != nil {
+				r.Killed()
+			}
 			return stdout.Bytes(), &Error{Args: args, ExitCode: exitErr.ExitCode(), Stderr: stderr.String()}
 		}
 		if errors.Is(err, exec.ErrNotFound) {

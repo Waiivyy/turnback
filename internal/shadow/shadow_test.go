@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Waiivyy/turnback/internal/shadow"
 	"github.com/Waiivyy/turnback/internal/testutil"
@@ -366,5 +367,42 @@ func TestSnapshotFollowsAFolderReplacedByASymlink(t *testing.T) {
 	}
 	if got := files(t, repo, gitDir, tree); !reflect.DeepEqual(got, []string{"config"}) {
 		t.Errorf("snapshot = %q, want only the symlink", got)
+	}
+}
+
+func TestStaleLocksAreClearedAndFreshOnesKept(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write("a.txt", "1\n")
+	r, gitDir := open(t, repo)
+	if _, err := r.Snapshot(); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	for _, name := range []string{"index.lock", "refs/turns/7.lock"} {
+		p := filepath.Join(gitDir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chtimes(filepath.Join(gitDir, "refs", "turns", "7.lock"), old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	r.ClearStaleLocks(time.Minute)
+	if _, err := os.Stat(filepath.Join(gitDir, "refs", "turns", "7.lock")); err == nil {
+		t.Error("an hour-old ref lock was kept")
+	}
+	if _, err := os.Stat(filepath.Join(gitDir, "index.lock")); err != nil {
+		t.Error("a fresh index lock was removed")
+	}
+	r.ClearStaleLocks(0)
+	if _, err := os.Stat(filepath.Join(gitDir, "index.lock")); err == nil {
+		t.Error("the index lock was kept")
+	}
+	if _, err := r.Snapshot(); err != nil {
+		t.Errorf("Snapshot after clearing the locks: %v", err)
 	}
 }

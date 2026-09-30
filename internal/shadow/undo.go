@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -276,9 +277,14 @@ type checkout struct {
 // result, and returns a *CheckoutError describing the outcome.
 func (co *checkout) fail(cause error) error {
 	r := co.repo
+	names := make(map[string]map[string]bool) // folder listings, read once each
+	// Phase 2 only began once every new path was proven free, so a file at
+	// one now that holds all or part of what git was writing is this
+	// checkout's: a disk that filled up leaves a partial file behind.
 	for _, c := range co.created {
-		if r.matches(c.Path, c.New) { // only remove what this checkout wrote
+		if r.wrote(c.Path, c.New, names) {
 			os.Remove(filepath.Join(r.root, filepath.FromSlash(c.Path)))
+			delete(names, path.Dir(c.Path))
 		}
 	}
 	for i := len(co.newDirs) - 1; i >= 0; i-- {
@@ -290,27 +296,60 @@ func (co *checkout) fail(cause error) error {
 	} else if co.mid != co.from {
 		_, putBack = r.run.Run("read-tree", "-m", "-u", co.mid, co.from)
 	}
+	names = make(map[string]map[string]bool)
 	var leftover []string
-	for _, c := range co.changes {
-		if c.Old == nil {
-			// A new path: only a file this checkout wrote and could not
-			// remove is left over. Something else standing there is not.
-			if r.matches(c.Path, c.New) {
-				leftover = append(leftover, c.Path)
-			}
-			continue
+	for _, c := range co.created {
+		if r.wrote(c.Path, c.New, names) {
+			leftover = append(leftover, c.Path) // written, and could not be removed
 		}
-		if !r.matches(c.Path, c.Old) {
+	}
+	for _, c := range co.changes {
+		if c.Old != nil && !r.matches(c.Path, c.Old) {
 			leftover = append(leftover, c.Path)
 		}
 	}
 	if len(leftover) == 0 {
 		return &CheckoutError{Cause: cause, Restored: true}
 	}
+	sort.Strings(leftover)
 	if putBack != nil {
 		cause = fmt.Errorf("%w (putting files back failed too: %v)", cause, putBack)
 	}
 	return &CheckoutError{Cause: cause, Leftover: leftover}
+}
+
+// wrote reports whether the file at path, spelled exactly so, holds all or
+// the start of what a checkout of e writes there. Another file standing
+// there, or the same name under another spelling on a case-insensitive
+// disk, is not the checkout's.
+func (r *Repo) wrote(p string, e *Entry, names map[string]map[string]bool) bool {
+	dir, base := path.Dir(p), path.Base(p)
+	listed, ok := names[dir]
+	if !ok {
+		listed = make(map[string]bool)
+		entries, _ := os.ReadDir(filepath.Join(r.root, filepath.FromSlash(dir)))
+		for _, entry := range entries {
+			listed[entry.Name()] = true
+		}
+		names[dir] = listed
+	}
+	if !listed[base] {
+		return false
+	}
+	if r.matches(p, e) {
+		return true
+	}
+	abs := filepath.Join(r.root, filepath.FromSlash(p))
+	fi, err := os.Lstat(abs)
+	if err != nil || !fi.Mode().IsRegular() || e.Submodule() {
+		return false
+	}
+	want, err := r.ReadBlob(e.ID) // a symlink's target, if git wrote it as a plain file
+	if err != nil {
+		return false
+	}
+	got, err := os.ReadFile(abs)
+	return err == nil && bytes.HasPrefix(want, got)
 }
 
 // verify checks that every path is on disk exactly as expected; a nil

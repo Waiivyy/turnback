@@ -88,6 +88,8 @@ func (a *App) begin() (sh *shadow.Repo, unlock func(), err error) {
 		unlock()
 		return nil, nil, err
 	}
+	// A turnback that was killed mid-command may have left git's locks.
+	sh.ClearStaleLocks(time.Minute)
 	return sh, unlock, nil
 }
 

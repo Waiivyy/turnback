@@ -75,11 +75,34 @@ func Open(root, gitDir string) (*Repo, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.run = git.Runner{Dir: root, Opts: opts, Env: identity}
+	r.run = git.Runner{Dir: root, Opts: opts, Env: identity, Killed: func() { r.ClearStaleLocks(0) }}
 	// git init probes whether the file system keeps the executable bit.
 	out, err := r.run.Run("config", "--type=bool", "--default=true", "core.fileMode")
 	r.fileMode = err != nil || strings.TrimSpace(out) != "false"
 	return r, nil
+}
+
+// ClearStaleLocks removes lock files at least age old from the private
+// repository. A git command leaves them behind when it is killed, and then
+// every later command fails. Only turnback runs git here, one command at a
+// time under its own lock, which the caller must hold, so a lock file that
+// is not new cannot belong to a running command.
+func (r *Repo) ClearStaleLocks(age time.Duration) {
+	cutoff := time.Now().Add(-age)
+	clear := func(p string) {
+		if fi, err := os.Lstat(p); err == nil && fi.Mode().IsRegular() && !fi.ModTime().After(cutoff) {
+			os.Remove(p)
+		}
+	}
+	for _, name := range []string{"index.lock", "HEAD.lock", "packed-refs.lock", "shallow.lock"} {
+		clear(filepath.Join(r.gitDir, name))
+	}
+	filepath.WalkDir(filepath.Join(r.gitDir, "refs"), func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(p, ".lock") {
+			clear(p)
+		}
+		return nil
+	})
 }
 
 // syncSettings prepares the private repository and returns the global

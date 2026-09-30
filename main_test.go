@@ -134,3 +134,36 @@ func TestTheWebPageServesTurnsUntilCtrlC(t *testing.T) {
 		t.Errorf("output after Ctrl-C:\n%s", rest.String())
 	}
 }
+
+func TestAnUndoThatRunsOutOfSpaceLeavesNothingBehind(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("needs ulimit")
+	}
+	repo := testutil.NewRepo(t)
+	big := strings.Repeat("0123456789abcdef", 3<<16) // 3 MB
+	repo.Write("big.bin", big)
+	repo.Commit("initial")
+	turnback(t, repo.Dir, "start", "-m", "Delete the big file")
+	repo.Remove("big.bin")
+	turnback(t, repo.Dir, "end")
+
+	// A file size limit far below 3 MB makes git's write of big.bin stop
+	// partway, as a full disk would.
+	undo := exec.Command("sh", "-c", `ulimit -f 1024 && exec "$0" undo 1 --yes`, binary)
+	undo.Dir = repo.Dir
+	out, err := undo.CombinedOutput()
+	if err == nil {
+		t.Fatalf("the undo succeeded under the limit:\n%s", out)
+	}
+	if !strings.Contains(string(out), "nothing was changed") {
+		t.Errorf("output:\n%s", out)
+	}
+	if repo.Exists("big.bin") {
+		t.Error("a partly written big.bin was left behind")
+	}
+	// Without the limit, the same undo works.
+	turnback(t, repo.Dir, "undo", "1", "--yes")
+	if repo.Read("big.bin") != big {
+		t.Error("big.bin did not come back whole")
+	}
+}

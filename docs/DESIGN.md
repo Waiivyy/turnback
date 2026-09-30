@@ -245,6 +245,9 @@ page draws long diffs a part at a time, so a huge turn cannot freeze it.
   afterwards, that is a conflict; the edits are not moved back to the old
   name.
 - Submodules are recorded as commit pointers only and are never undone.
+- With `core.symlinks=false`, the default in Git for Windows, git writes a
+  symbolic link as a plain file. An undo that must bring a link back then
+  stops and changes nothing.
 - The first snapshot copies the content of every file into `.turnback/git`,
   so it costs disk space in proportion to the working tree. Later snapshots
   store only files that changed.
