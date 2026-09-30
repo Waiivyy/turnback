@@ -7,6 +7,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-30
+
+First release.
+
 ### Added
 
 - `turnback undo <turn>` takes one turn back out of the working tree while
@@ -42,5 +46,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - README with a demo, an example session, a command reference, a safety
   section and a FAQ.
 - CI on Linux and macOS with the oldest supported and the latest Go.
+- Prebuilt binaries for macOS, Linux, Windows and FreeBSD on every release,
+  with checksums, and a one-line install script.
+- Commands in the same repository are serialized with an operating system
+  file lock, which is released even if turnback crashes.
 - Project scaffold: Go module, MIT license, README, changelog and design notes.
 - Command-line skeleton with `help` and `version`.
+
+[Unreleased]: https://github.com/Waiivyy/turnback/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Waiivyy/turnback/releases/tag/v0.1.0
