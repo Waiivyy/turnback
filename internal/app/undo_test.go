@@ -708,8 +708,13 @@ func TestUndoAndShowATurnTooBigForACommandLine(t *testing.T) {
 	repo.Commit("initial")
 	a := openApp(t, repo)
 	// 3,000 paths of about 800 characters: 2.4 MB, more than macOS or
-	// Linux accept as command-line arguments.
-	deep := strings.TrimSuffix(strings.Repeat("deeply-nested-generated-folder-level/", 21), "/")
+	// Linux accept as command-line arguments. Windows allows only 32 KB
+	// but also limits paths to 260 characters, so it gets short ones.
+	levels := 21
+	if runtime.GOOS == "windows" {
+		levels = 1
+	}
+	deep := strings.TrimSuffix(strings.Repeat("deeply-nested-generated-folder-level/", levels), "/")
 	tr := turn(t, a, "Generate a client", func() {
 		for i := 0; i < 3000; i++ {
 			repo.Write(fmt.Sprintf("generated/%s/model_%04d.ts", deep, i), "export {}\n")

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -256,6 +257,9 @@ func TestDiffColorsHunkLinesByTheirFirstCharacter(t *testing.T) {
 }
 
 func TestPagerReceivesTheOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("turnback does not page output on Windows")
+	}
 	repo := twoTurns(t)
 	paged := filepath.Join(testutil.TempDir(t), "paged.txt")
 	var stdout, stderr bytes.Buffer

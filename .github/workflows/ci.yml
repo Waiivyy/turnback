@@ -15,8 +15,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         go: ["1.22", stable]
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -25,12 +28,35 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Check formatting
+        # Windows checkouts turn line endings into CRLF, which gofmt reports.
+        if: runner.os != 'Windows'
         run: test -z "$(gofmt -l .)"
       - name: Test
+        if: runner.os != 'Windows'
         run: go test -race ./...
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        run: go test ./...
       - name: Cross-compile
         run: |
           GOOS=windows GOARCH=amd64 go build -o /dev/null .
           GOOS=linux GOARCH=arm64 go build -o /dev/null .
       - name: Check shell scripts
         run: sh -n install.sh && sh -n scripts/build-release.sh
+
+  oldest-git:
+    # The README promises git 2.30 or newer; Debian 11 ships 2.30.2.
+    name: test (git 2.30, Debian 11)
+    runs-on: ubuntu-latest
+    container: debian:bullseye
+    steps:
+      - name: Install git
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Show the git version
+        run: git --version
+      - name: Test
+        run: go test ./...

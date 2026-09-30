@@ -306,7 +306,8 @@ func TestLockIsReleasedWhenItsHolderDies(t *testing.T) {
 	}
 	helper.Process.Kill()
 	helper.Wait()
-	unlock, err := s.Lock(time.Second)
+	// Windows releases a dead process's locks shortly after it exits.
+	unlock, err := s.Lock(5 * time.Second)
 	if err != nil {
 		t.Fatalf("Lock after the holder died: %v", err)
 	}
