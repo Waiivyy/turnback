@@ -321,14 +321,33 @@ func (r *Repo) Tidy() error {
 	return err
 }
 
+// maxArgBytes keeps each git command line well under the smallest limit
+// among supported systems (32 KiB on Windows).
+const maxArgBytes = 24 * 1024
+
 // Diff returns a readable diff between two snapshots, limited to paths if
-// any are given. Binary files are summarized in one line.
+// any are given. Binary files are summarized in one line. Long path lists
+// are split over several git runs.
 func (r *Repo) Diff(from, to string, paths ...string) (string, error) {
-	args := []string{"diff-tree", "-p", "-M", "--no-color", from, to}
-	if len(paths) > 0 {
-		args = append(append(args, "--"), paths...)
+	base := []string{"diff-tree", "-p", "-M", "--no-color", from, to}
+	if len(paths) == 0 {
+		return r.run.Run(base...)
 	}
-	return r.run.Run(args...)
+	var out strings.Builder
+	for start := 0; start < len(paths); {
+		end, size := start, 0
+		for end < len(paths) && (end == start || size+len(paths[end])+1 <= maxArgBytes) {
+			size += len(paths[end]) + 1
+			end++
+		}
+		part, err := r.run.Run(append(append(append([]string{}, base...), "--"), paths[start:end]...)...)
+		if err != nil {
+			return "", err
+		}
+		out.WriteString(part)
+		start = end
+	}
+	return out.String(), nil
 }
 
 // CountFiles returns the number of files in a snapshot.

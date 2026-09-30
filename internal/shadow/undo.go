@@ -42,13 +42,10 @@ const nullID = "0000000000000000000000000000000000000000"
 
 // TreeDiff lists every path that differs between two snapshots, with the
 // entry on each side, without rename detection. With paths, it is limited
-// to those paths.
+// to exactly those paths. The filtering happens here rather than on git's
+// command line, so any number of paths works.
 func (r *Repo) TreeDiff(from, to string, paths ...string) ([]EntryChange, error) {
-	args := []string{"diff-tree", "-r", "-z", "--no-renames", "--raw", from, to}
-	if len(paths) > 0 {
-		args = append(append(args, "--"), paths...)
-	}
-	out, err := r.run.Run(args...)
+	out, err := r.run.Run("diff-tree", "-r", "-z", "--no-renames", "--raw", from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -56,9 +53,18 @@ func (r *Repo) TreeDiff(from, to string, paths ...string) ([]EntryChange, error)
 	if err != nil {
 		return nil, err
 	}
-	changes := make([]EntryChange, len(entries))
-	for i, e := range entries {
-		changes[i] = EntryChange{Path: e.path, Old: entry(e.oldMode, e.oldID), New: entry(e.newMode, e.newID)}
+	var keep map[string]bool
+	if len(paths) > 0 {
+		keep = make(map[string]bool, len(paths))
+		for _, p := range paths {
+			keep[p] = true
+		}
+	}
+	changes := make([]EntryChange, 0, len(entries))
+	for _, e := range entries {
+		if keep == nil || keep[e.path] {
+			changes = append(changes, EntryChange{Path: e.path, Old: entry(e.oldMode, e.oldID), New: entry(e.newMode, e.newID)})
+		}
 	}
 	return changes, nil
 }

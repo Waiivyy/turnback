@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"reflect"
@@ -694,5 +695,40 @@ func TestSkipWorktreeEditsStillCountAsUnsaved(t *testing.T) {
 	var dirty *app.DirtyError
 	if _, err := a.ApplyUndo(p, false); !errors.As(err, &dirty) {
 		t.Errorf("ApplyUndo err = %v, want DirtyError", err)
+	}
+}
+
+func TestUndoAndShowATurnTooBigForACommandLine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("creates thousands of files")
+	}
+	repo := testutil.NewRepo(t)
+	repo.Write("keep.txt", "k\n")
+	repo.Commit("initial")
+	a := openApp(t, repo)
+	// 3,000 paths of about 800 characters: 2.4 MB, more than macOS or
+	// Linux accept as command-line arguments.
+	deep := strings.TrimSuffix(strings.Repeat("deeply-nested-generated-folder-level/", 21), "/")
+	tr := turn(t, a, "Generate a client", func() {
+		for i := 0; i < 3000; i++ {
+			repo.Write(fmt.Sprintf("generated/%s/model_%04d.ts", deep, i), "export {}\n")
+		}
+	})
+	diff, err := a.Diff(tr, []string{"generated"})
+	if err != nil {
+		t.Fatalf("Diff: %v", err)
+	}
+	for _, want := range []string{"model_0000.ts", "model_2999.ts"} {
+		if !strings.Contains(diff, want) {
+			t.Errorf("diff lacks %s", want)
+		}
+	}
+	p := planUndo(t, a, 1, "generated")
+	if p.Writes() != 3000 {
+		t.Fatalf("plan writes %d files, want 3000", p.Writes())
+	}
+	applyUndo(t, a, p, false)
+	if repo.Exists("generated") || repo.Read("keep.txt") != "k\n" {
+		t.Errorf("generated/ exists = %v, keep.txt = %q", repo.Exists("generated"), repo.Read("keep.txt"))
 	}
 }
