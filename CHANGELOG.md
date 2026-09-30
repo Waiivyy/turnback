@@ -9,6 +9,14 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `turnback undo <turn>` takes one turn back out of the working tree while
+  keeping everything that happened after it, using a per-file three-way merge.
+  It is a dry run by default, asks for confirmation in a terminal, and supports
+  `--yes`, `--dry-run`, `--file` and `--force`. If any file conflicts, nothing
+  is written and the overlapping lines and later turns are shown. Files with
+  unsaved changes are only rewritten with `--force`, ignored files are never
+  overwritten, and every undo is recorded as a turn so it can be undone.
+- `turnback end` points to `show` and `undo` for the turn it just recorded.
 - `turnback log` lists turns newest first, filtered by `--since` (dates,
   times, durations, `today`, `yesterday`), `--file` (repeatable, relative to
   the current directory, matching renamed files by either name) and `-n`.
@@ -23,7 +31,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Private snapshot store in `.turnback/git`. It never writes to your
   repository's history, index, refs or stash, honors your ignore rules and
   stores exact file bytes.
-- README with a demo, an example session, a command reference and a FAQ.
+- README with a demo, an example session, a command reference, a safety
+  section and a FAQ.
 - CI on Linux and macOS with the oldest supported and the latest Go.
 - Project scaffold: Go module, MIT license, README, changelog and design notes.
 - Command-line skeleton with `help` and `version`.
