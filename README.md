@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Waiivyy/turnback/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Waiivyy/turnback"></a>
   <a href="https://github.com/Waiivyy/turnback/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/Waiivyy/turnback/actions/workflows/ci.yml/badge.svg"></a>
   <a href="go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/Waiivyy/turnback?logo=go&amp;logoColor=white"></a>
   <img alt="No dependencies" src="https://img.shields.io/badge/dependencies-none-brightgreen">
@@ -63,6 +64,7 @@ curl -fsSL https://raw.githubusercontent.com/Waiivyy/turnback/main/install.sh | 
 The [script](install.sh) downloads the binary for your machine from the
 [latest release](https://github.com/Waiivyy/turnback/releases/latest), checks
 its SHA-256 checksum and installs it to `~/.local/bin`, without root rights.
+If that folder is not on your `PATH` yet, the script prints the line to add.
 Set `TURNBACK_INSTALL_DIR` to put it elsewhere, or `TURNBACK_VERSION=v0.1.0`
 to pin a version.
 
