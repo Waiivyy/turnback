@@ -112,6 +112,7 @@ func (r *Repo) syncSettings() ([]string, error) {
 		"-c", "core.autocrlf=false",
 		"-c", "core.quotePath=false",
 		"-c", "advice.addEmbeddedRepo=false",
+		"-c", "gc.autoDetach=false",
 	}
 	// core.excludesFile may be set in the user's repository config, which the
 	// private repository does not read.
@@ -123,6 +124,8 @@ func (r *Repo) syncSettings() ([]string, error) {
 	return opts, nil
 }
 
+// writeIfChanged replaces path atomically when its content differs, so a
+// concurrent git command never reads a half-written ignore list.
 func writeIfChanged(path string, content []byte) error {
 	if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, content) {
 		return nil
@@ -130,7 +133,22 @@ func writeIfChanged(path string, content []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, content, 0o644)
+	f, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	if err != nil {
+		return err
+	}
+	_, werr := f.Write(content)
+	cerr := f.Close()
+	if werr == nil {
+		werr = cerr
+	}
+	if werr == nil {
+		werr = os.Rename(f.Name(), path)
+	}
+	if werr != nil {
+		os.Remove(f.Name())
+	}
+	return werr
 }
 
 // Snapshot records the current working tree (tracked files plus untracked
@@ -217,6 +235,13 @@ func (r *Repo) Changes(from, to string) ([]Change, error) {
 // includes binary content.
 func (r *Repo) Patch(from, to string) (string, error) {
 	return r.run.Run("diff-tree", "-p", "--binary", "--full-index", "-M", "--no-color", from, to)
+}
+
+// Tidy packs loose objects once enough have piled up (git gc --auto). It
+// runs in the foreground and does nothing most of the time.
+func (r *Repo) Tidy() error {
+	_, err := r.run.Run("gc", "--auto", "--quiet")
+	return err
 }
 
 // CountFiles returns the number of files in a snapshot.
