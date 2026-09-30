@@ -18,13 +18,14 @@
 <p align="center">
   <a href="#install">Install</a> &nbsp;&middot;&nbsp;
   <a href="#quickstart">Quickstart</a> &nbsp;&middot;&nbsp;
+  <a href="#example-session">Example</a> &nbsp;&middot;&nbsp;
   <a href="#commands">Commands</a> &nbsp;&middot;&nbsp;
-  <a href="#how-it-works">How it works</a> &nbsp;&middot;&nbsp;
+  <a href="#safety">Safety</a> &nbsp;&middot;&nbsp;
   <a href="#faq">FAQ</a>
 </p>
 
 <p align="center">
-  <img src="docs/assets/demo.svg" width="760" alt="A terminal running turnback log, which lists three agent turns, and turnback show 2, which prints the files and diff of the second turn">
+  <img src="docs/assets/demo.svg" width="760" alt="A terminal running turnback log, which lists three agent turns, then turnback undo 2, which previews the change, asks for confirmation and records the undo as turn 4">
 </p>
 
 AI coding agents change many files in a single turn. When one of those turns
@@ -36,20 +37,20 @@ edits you made yourself in between.
 You can list your turns, see exactly what each one changed, and undo only the
 one you don't want while everything else stays put.
 
+- **Selective undo.** Take one turn back out, or one file of it, and keep every
+  change that came after, whether a later turn or you made it.
 - **Per-turn history.** Every turn gets an id, a time, a description, the files
   it touched and its diff.
 - **Your edits stay yours.** Changes you make between agent turns are never
-  counted as part of a turn.
+  counted as part of a turn, and an undo keeps them.
+- **Safe by default.** Every undo is a dry run until you confirm. Overlapping
+  edits are reported, never merged into a mess, and every undo can itself be
+  undone.
 - **Out of git's way.** No commits, branches, stash entries or index changes in
   your repository. Files your `.gitignore` excludes are never read or written.
 - **One small binary.** Written in Go, no dependencies beyond git, nothing to
-  configure.
-- **Works with any agent.** Cursor, Copilot, Aider, Codex, or anything else that
-  edits files in your working tree.
-
-> [!NOTE]
-> turnback is in early development. Recording and inspecting turns work
-> today. Selective undo is being built next; see the [roadmap](#roadmap).
+  configure. Works with any agent: Cursor, Copilot, Aider, Codex, or anything
+  else that edits files in your working tree.
 
 ## Install
 
@@ -82,6 +83,7 @@ turnback start -m "Add rate limiting"   # right before you prompt the agent
 turnback end                            # when it is done
 turnback log                            # every turn, newest first
 turnback show 1                         # what turn 1 changed
+turnback undo 1                         # take turn 1 back out, keep the rest
 ```
 
 That is the whole workflow. `turnback status` shows what the turn in progress
@@ -91,9 +93,9 @@ keep.
 ## Example session
 
 A small TypeScript API, three agent turns, and one manual README edit made
-between the first two turns.
+between the first two turns. All output below is real.
 
-Recording a turn:
+### Record turns
 
 ```console
 $ turnback start -m "Add rate limiting to the API" --agent cursor
@@ -106,9 +108,10 @@ Recorded turn 1: Add rate limiting to the API
   A  src/rateLimit.ts  +23
   M  src/server.ts     +2 -1
 2 files changed, +25 -1
+See it with 'turnback show 1', undo it with 'turnback undo 1'.
 ```
 
-Listing turns, all of them or only those that touched a file:
+### List and inspect them
 
 ```console
 $ turnback log
@@ -123,7 +126,10 @@ ID  WHEN         FILES  CHANGES  AGENT   DESCRIPTION
  1  today 15:39      2  +25 -1   cursor  Add rate limiting to the API
 ```
 
-Inspecting a turn:
+The README edit made between turns 1 and 2 appears in neither turn.
+
+<details>
+<summary><code>turnback show 2</code> prints the turn and its diff</summary>
 
 ```console
 $ turnback show 2
@@ -168,7 +174,107 @@ index e16ca76..84a05cf 100644
  }
 ```
 
-The README edit made between turns 1 and 2 appears in neither turn.
+</details>
+
+### Undo one turn
+
+The sliding window from turn 2 turned out to be a bad idea. Undo just that
+turn, and keep the tests from turn 3:
+
+```console
+$ turnback undo 2
+Undo turn 2: Switch the limiter to a sliding window
+
+  M  src/rateLimit.ts  put back the version from before turn 2
+
+Note: turn 3 came after turn 2. Its changes are kept, but if it relies on
+what turn 2 did, run your tests after the undo.
+
+diff --git a/src/rateLimit.ts b/src/rateLimit.ts
+index 84a05cf..e16ca76 100644
+--- a/src/rateLimit.ts
++++ b/src/rateLimit.ts
+@@ -2,18 +2,22 @@ import type { Request, Response, NextFunction } from "express";
+ 
+ const WINDOW_MS = 60_000;
+ const LIMIT = 100;
+-const hits = new Map<string, number[]>();
++const hits = new Map<string, { count: number; windowStart: number }>();
+ 
+ export function rateLimit(req: Request, res: Response, next: NextFunction) {
+   const now = Date.now();
+   const key = req.ip ?? "unknown";
+-  const recent = (hits.get(key) ?? []).filter((t) => now - t < WINDOW_MS);
++  const windowStart = Math.floor(now / WINDOW_MS) * WINDOW_MS;
++  const entry = hits.get(key);
+ 
+-  if (recent.length >= LIMIT) {
++  if (!entry || entry.windowStart !== windowStart) {
++    hits.set(key, { count: 1, windowStart });
++    return next();
++  }
++  if (entry.count >= LIMIT) {
+     res.status(429).json({ error: "Too many requests" });
+     return;
+   }
+-  recent.push(now);
+-  hits.set(key, recent);
++  entry.count++;
+   next();
+ }
+
+Apply this undo? [y/N] y
+
+Undid turn 2: 1 file changed, +9 -5.
+Recorded as turn 4. To take this undo back, run 'turnback undo 4'.
+```
+
+The undo is a turn of its own, so it shows up in the log and can be undone
+like any other:
+
+```console
+$ turnback log
+ID  WHEN         FILES  CHANGES  AGENT   DESCRIPTION
+ 4  today 16:15      1  +9 -5            Undo turn 2: Switch the limiter to a sliding window
+ 3  today 15:42      1  +21 -0   aider   Add tests for the rate limiter
+ 2  today 15:41      1  +5 -9    cursor  Switch the limiter to a sliding window
+ 1  today 15:39      2  +25 -1   cursor  Add rate limiting to the API
+
+$ turnback undo 4 --yes
+...
+Undid turn 4: 1 file changed, +5 -9.
+Recorded as turn 5. To take this undo back, run 'turnback undo 5'.
+```
+
+### When a later change gets in the way
+
+Suppose a fourth turn had since edited the very lines turn 2 wrote. turnback
+will not guess: it writes nothing and shows you where the edits collide.
+
+```console
+$ turnback undo 2 --yes
+Undo turn 2: Switch the limiter to a sliding window
+
+  !  src/rateLimit.ts  conflict: later edits overlap the lines turn 2 changed
+
+src/rateLimit.ts
+     Also changed later by turn 4.
+
+         const now = Date.now();
+         const key = req.ip ?? "unknown";
+       <<<<<<< now
+         if (req.path === "/health") return next();
+         const recent = (hits.get(key) ?? []).filter((t) => now - t < WINDOW_MS / 2);
+       =======
+         const windowStart = Math.floor(now / WINDOW_MS) * WINDOW_MS;
+         const entry = hits.get(key);
+       >>>>>>> before turn 2
+
+         if (!entry || entry.windowStart !== windowStart) {
+
+turnback: cannot undo turn 2 cleanly, so nothing was changed
+hint: Undo the later turns first, or leave the conflicting files out and undo the others with --file.
+```
 
 ## Commands
 
@@ -179,9 +285,22 @@ The README edit made between turns 1 and 2 appears in neither turn.
 | `turnback status` | Show whether a turn is being recorded and what it has changed so far |
 | `turnback log` | List recorded turns, newest first |
 | `turnback show [<turn>]` | Show a turn's details, files and diff; the latest turn by default |
-| `turnback undo <turn>` | Revert one turn, or one file from it *(coming next)* |
+| `turnback undo <turn>` | Take one turn back out, or some of its files, keeping everything after it |
 
-`turnback help <command>` lists every option. The ones you will use most:
+`<turn>` is an id from `turnback log`, or `last`. `turnback help <command>`
+lists every option; these are the ones you will use most.
+
+<details>
+<summary><strong><code>turnback undo</code></strong></summary>
+
+| Option | Description |
+|---|---|
+| `--file <path>` | Only undo this file, or the files inside this folder. Repeat it for several paths. A renamed file matches by its old and its new name, and both halves of the rename are undone together. |
+| `-y, --yes` | Apply without asking. Without it, turnback asks in a terminal and only does a dry run elsewhere, such as in scripts. |
+| `-n, --dry-run` | Only show what would change, even together with `--yes`. |
+| `-f, --force` | Also rewrite files whose current changes are neither committed nor recorded. turnback saves them first, so the undo can still be undone. |
+
+</details>
 
 <details>
 <summary><strong><code>turnback start</code> and <code>turnback end</code></strong></summary>
@@ -211,7 +330,6 @@ The README edit made between turns 1 and 2 appears in neither turn.
 
 | Option | Description |
 |---|---|
-| `<turn>` | A turn id from `turnback log`, or `last`. Defaults to `last`. |
 | `--file <path>` | Only show this file, or the files inside this folder. Repeat it to show several paths. |
 | `--stat` | Show the list of files without the diff. |
 | `--json` | Print the turn and its diff as JSON. |
@@ -240,25 +358,53 @@ hooks is on the [roadmap](#roadmap).
   <img src="docs/assets/recording-light.svg" width="880" alt="A timeline: your edits, turn 1, your edits, turn 2, turn 3. Each turn spans from start to end. Your edits in between are not part of any turn.">
 </picture>
 
-- `turnback start` takes a snapshot of every file git would track: tracked
-  files plus new files that are not ignored. `turnback end` takes another, and
-  the difference between the two is the turn.
-- Snapshots live in a private git repository inside `.turnback/`, with its own
-  index, objects and refs. Your history, staging area, branches and stash are
-  never touched, and the folder ignores itself, so it never shows up in
-  `git status`.
-- Snapshots store exact bytes, whatever your line-ending settings or filters
-  such as Git LFS would do, so a restored file matches the original byte for
-  byte.
-- Each turn is also saved as readable JSON plus a standard `.patch` file in
-  `.turnback/turns/`, and as commits you can inspect with plain git:
+**Recording.** `turnback start` takes a snapshot of every file git would
+track: tracked files plus new files that are not ignored. `turnback end` takes
+another, and the difference between the two is the turn. Snapshots live in a
+private git repository inside `.turnback/` with its own index, objects and
+refs, so your history, staging area, branches and stash are never touched.
+They store exact bytes, whatever your line-ending settings or filters such as
+Git LFS would do. Each turn is also saved as readable JSON plus a standard
+`.patch` file in `.turnback/turns/`.
 
-  ```bash
-  git --git-dir=.turnback/git log --oneline refs/turns/2
-  ```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/undo-dark.svg">
+  <img src="docs/assets/undo-light.svg" width="880" alt="After turnback undo 2: turn 1, your edits and turn 3 are kept, turn 2 is taken back, and the undo is recorded as turn 4.">
+</picture>
 
-The full design, including how undo merges around later changes, is in
-[docs/DESIGN.md](docs/DESIGN.md).
+**Undoing.** For every file the turn changed, turnback compares three
+versions: before the turn, after the turn and now. A file nobody touched since
+simply goes back to its old version. A file that changed again since gets a
+three-way merge that takes out only the turn's change, the same operation
+`git revert` performs. The whole result is built and shown to you as a diff
+before a single file is written, and the undo is recorded as a new turn.
+
+The full design is in [docs/DESIGN.md](docs/DESIGN.md).
+
+## Safety
+
+turnback exists to fix mistakes, so it is built to never make new ones:
+
+- **Dry run first.** An undo shows exactly what it would change and writes
+  nothing until you confirm, or pass `--yes`.
+- **All or nothing.** If any file cannot be undone cleanly, no file is written.
+  Edits that overlap or touch the undone lines count as conflicts, exactly as
+  they do in git.
+- **Later work is kept.** Changes from later turns, and edits you made
+  yourself, survive the undo.
+- **Unsaved work is protected.** A file whose current changes are neither
+  committed nor recorded is only rewritten with `--force`, and turnback saves
+  the current state first.
+- **Nothing git ignores is touched.** Not even when an ignored file, such as a
+  `.env`, stands where a deleted file would come back: the undo stops instead.
+- **Fresh check before writing.** If a file changes while you are reading the
+  preview, the undo stops rather than overwrite it.
+- **Every undo can be undone**, because it is recorded as a turn.
+
+One limit to know: conflict detection works on text. If turn 3 calls a function
+that turn 2 added in another file, undoing turn 2 applies cleanly and breaks
+the build. turnback points out when later turns exist; run your tests after an
+undo.
 
 ## FAQ
 
@@ -268,6 +414,26 @@ The full design, including how undo merges around later changes, is in
 No. turnback records working tree states while you work; committing, branching
 and pushing are still yours to do with git. turnback never creates commits in
 your repository.
+
+</details>
+
+<details>
+<summary><strong>What if a later turn depends on the one I undo?</strong></summary>
+
+If the later turn edited the same lines, turnback reports a conflict and
+changes nothing. If it depends on the undone code in some other way, for
+example by calling a function the undone turn added, the undo still applies,
+so turnback reminds you which later turns exist and you should run your tests.
+Undoing the later turns first, newest to oldest, avoids those conflicts unless
+your own edits touched the same lines.
+
+</details>
+
+<details>
+<summary><strong>Can I undo an undo?</strong></summary>
+
+Yes. Every undo is recorded as a turn, so `turnback undo <that turn>` puts the
+original changes back.
 
 </details>
 
@@ -323,7 +489,7 @@ turnback builds for Windows, but so far it is only tested on macOS and Linux.
 
 - [x] Record agent turns with `start` and `end`
 - [x] Inspect turns with `log` and `show`
-- [ ] Selective undo of a turn or a single file, with a dry run, conflict
+- [x] Selective undo of a turn or a single file, with a dry run, conflict
       detection and undo of an undo
 - [ ] Automatic recording through a git hook
 - [ ] Local web UI for browsing turns
