@@ -75,7 +75,7 @@ type command struct {
 var commands []*command
 
 func init() {
-	commands = []*command{startCommand, endCommand, statusCommand, logCommand, showCommand}
+	commands = []*command{startCommand, endCommand, statusCommand, logCommand, showCommand, undoCommand}
 }
 
 func lookup(name string) *command {

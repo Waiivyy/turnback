@@ -78,6 +78,7 @@ type UndoPlan struct {
 	Paths   []string // the paths the undo is limited to, if any
 	Files   []UndoFile
 	Preview string // diff from the current files to the result
+	Later   []int  // turns recorded after this one, apart from undos of it
 
 	current string   // snapshot the plan was made against
 	target  string   // tree of the result
@@ -194,6 +195,11 @@ func (a *App) plan(sh *shadow.Repo, t *store.Turn, current string, limit []strin
 	turns, err := a.Store.Turns()
 	if err != nil {
 		return nil, err
+	}
+	for i := len(turns) - 1; i >= 0; i-- {
+		if u := turns[i]; u.ID > t.ID && (u.Undoes == nil || u.Undoes.Turn != t.ID) {
+			p.Later = append(p.Later, u.ID)
+		}
 	}
 	for i := range p.Files {
 		f := &p.Files[i]

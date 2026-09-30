@@ -69,6 +69,14 @@ func lineCounts(env *Env, f store.File) string {
 	return strings.Join(parts, " ")
 }
 
+// joinAnd joins items as "a", "a and b" or "a, b and c".
+func joinAnd(items []string) string {
+	if len(items) <= 1 {
+		return strings.Join(items, "")
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+}
+
 // plural formats a count with its unit, such as "1 file" or "3 files".
 func plural(n int, unit string) string {
 	if n == 1 {
@@ -122,6 +130,11 @@ func explain(env *Env, err error) error {
 	case errors.Is(err, app.ErrNoTurns):
 		return errorf("no turns recorded yet").
 			withHint("Record one with 'turnback start' and 'turnback end'.")
+	}
+	var changed *app.ChangedError
+	if errors.As(err, &changed) {
+		return errorf("%s changed after the preview was made, so nothing was changed", joinAnd(changed.Paths)).
+			withHint("Run the undo again to see an up-to-date preview.")
 	}
 	var invalid *app.InvalidTurnError
 	if errors.As(err, &invalid) {
