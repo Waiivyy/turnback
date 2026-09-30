@@ -692,10 +692,14 @@ func (a *App) ApplyUndo(p *UndoPlan, force bool) (*store.Turn, error) {
 		return nil, err
 	}
 
-	// From here on, Ctrl-C must not leave the working tree half changed:
-	// turnback ignores it, and git runs outside the terminal's process group.
-	signal.Ignore(os.Interrupt)
-	defer signal.Reset(os.Interrupt)
+	// From here on, Ctrl-C must not leave the working tree half changed.
+	// turnback catches it rather than ignoring it: an ignored signal stays
+	// ignored in every git it starts, and signal.Reset does not undo that.
+	// The git commands that write files run outside the terminal's process
+	// group, so Ctrl-C never reaches them.
+	interrupts := make(chan os.Signal, 1)
+	signal.Notify(interrupts, os.Interrupt)
+	defer signal.Stop(interrupts)
 	plain := sh
 	sh = sh.Uninterruptible()
 
@@ -722,8 +726,9 @@ func (a *App) ApplyUndo(p *UndoPlan, force bool) (*store.Turn, error) {
 		return nil, fmt.Errorf("the undo was applied, but recording it failed: %w. %s", err, keepForRecovery(sh, before))
 	}
 	sh.DeleteRef(pendingRef)
-	// Housekeeping may take a while and is safe to interrupt.
-	signal.Reset(os.Interrupt)
+	// Housekeeping may take a while and is safe to interrupt: its git runs
+	// in the terminal's process group, so Ctrl-C stops it, while turnback
+	// goes on to report the undo it has already recorded.
 	plain.Tidy()
 	return u, nil
 }
