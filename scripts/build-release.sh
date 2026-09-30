@@ -38,10 +38,19 @@ else
 fi
 cd ..
 
-# The notes are the version's section of the changelog.
+# The notes are the version's section of the changelog, without the blank
+# lines around it or the link definitions that end the file.
 awk -v heading="## [${version#v}]" '
 	index($0, "## [") == 1 { if (found) exit; if (index($0, heading) == 1) { found = 1; next } }
-	found { print }
+	found && /^\[[^]]*\]: / { exit }
+	found { lines[++n] = $0 }
+	END {
+		first = 1
+		while (first <= n && lines[first] == "") first++
+		last = n
+		while (last >= first && lines[last] == "") last--
+		for (i = first; i <= last; i++) print lines[i]
+	}
 ' CHANGELOG.md >release-notes.md
 if [ ! -s release-notes.md ]; then
 	echo "build-release.sh: CHANGELOG.md has no section for ${version#v}" >&2
