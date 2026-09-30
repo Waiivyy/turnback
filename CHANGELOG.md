@@ -24,18 +24,26 @@ and the project uses [Semantic Versioning](https://semver.org/).
   and works in light and dark mode and at phone width. It is served on
   127.0.0.1 only, behind a secret address, refuses requests that name another
   host, and runs only its own script.
+- Release archives carry a signed build provenance attestation, which
+  `gh attestation verify` checks.
 - CI runs the tests on Windows too, and against git 2.30.0, the oldest
   version turnback supports.
 
+### Changed
+
+- The first snapshot in a repository copies the committed files from git's
+  own store as one pack instead of writing them one by one. In a repository
+  of 30,000 files, `turnback start` went from 24 seconds to 4, and the
+  `turnback end` after it from nearly 3 minutes, spent packing those files,
+  to a third of a second.
+- Building from source needs Go 1.24 or newer. Older Go versions leave out a
+  load command that current macOS requires of programs using the network
+  package, which `turnback ui` needs, so their builds would not start. With
+  Go's default settings, `go install` fetches a new enough Go by itself. The
+  prebuilt binaries are not affected.
+
 ### Fixed
 
-- A repository could ship a symbolic link at `.turnback/lock` and make the
-  first `turnback start` overwrite the file it points to. The lock is now
-  opened without following links, links anywhere in turnback's folder are
-  refused, and turnback does not run in a repository that tracks files in
-  `.turnback/`, since those can come from anyone who can push to it.
-- git's pathspec environment variables, such as `GIT_LITERAL_PATHSPECS`, no
-  longer change how turnback's own git commands read paths.
 - Undoing a turn that renamed a file whose name git ignores, such as a
   force-added `.env.example` moved with `git mv`, deleted the new name while
   leaving the old one missing, so the file was lost. A rename is now undone
@@ -48,33 +56,36 @@ and the project uses [Semantic Versioning](https://semver.org/).
   process killed midway left a lock file that made every later command fail.
   Partly written files are now removed, and turnback clears the locks its
   own git commands leave behind.
-- The first snapshot in a repository copies the committed files from git's
-  own store as one pack instead of writing them one by one. In a repository
-  of 30,000 files, `turnback start` went from 24 seconds to 4, and the
-  `turnback end` after it from nearly 3 minutes, spent packing those files,
-  to a third of a second.
 - Finding the files git ignores no longer searches the whole index once per
   file. A dry run for a turn that deleted 20,000 of 30,000 files went from
   about 4 seconds to under half a second.
+- `turnback status` shows a file that git began ignoring during the turn the
+  way `turnback end` records it, instead of as deleted.
+- Error messages keep their line breaks, so git's errors that span several
+  lines stay readable. Other control characters are still escaped.
+- Ctrl-C stops the housekeeping at the end of an undo, as intended, and
+  turnback still reports the undo.
+- On file systems that cannot lock files, such as NFS without a lock
+  service, every command failed. turnback now runs without the lock there.
+- git's pathspec environment variables, such as `GIT_LITERAL_PATHSPECS`, no
+  longer change how turnback's own git commands read paths.
+- The install script resolves the latest release once, so the archive and
+  its checksum always come from the same release; stops on Ctrl-C instead of
+  carrying on; says so when no SHA-256 tool is installed rather than
+  reporting a checksum mismatch; replaces the binary in one step even when
+  the temporary folder is on another file system; points Git Bash users to
+  the Windows download; and cannot run half of itself if its own download is
+  cut short.
 
-- The install script now resolves the latest release once, so the archive
-  and its checksum always come from the same release; stops on Ctrl-C
-  instead of carrying on; says so when no SHA-256 tool is installed rather
-  than reporting a checksum mismatch; replaces the binary in one step even
-  when the temporary folder is on another file system; points Git Bash users
-  to the Windows download; and cannot run half of itself if its own download
-  is cut short. Downloads from GitHub use HTTPS only.
+### Security
 
-- Release archives carry a signed build provenance attestation, which
-  `gh attestation verify` checks.
-
-### Changed
-
-- Building from source needs Go 1.24 or newer. Older Go versions leave out a
-  load command that current macOS requires of programs using the network
-  package, which `turnback ui` needs, so their builds would not start. With
-  Go's default settings, `go install` fetches a new enough Go by itself. The
-  prebuilt binaries are not affected.
+- A repository could ship a symbolic link at `.turnback/lock` and make the
+  first `turnback start` overwrite the file it points to. The lock is now
+  opened without following links, links anywhere in turnback's folder are
+  refused, and turnback does not run in a repository that tracks files in
+  `.turnback/`, since those can come from anyone who can push to it.
+- The install script and the one-liner in the README download from GitHub
+  over HTTPS only.
 
 ## [0.1.0] - 2026-09-30
 
