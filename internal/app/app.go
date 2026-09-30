@@ -220,11 +220,11 @@ func (a *App) closeSession(sh *shadow.Repo) error {
 
 // Status describes what turnback knows about the working tree.
 type Status struct {
-	Initialized bool            // turnback has been used here
-	Session     *store.Session  // turn being recorded, if any
-	Pending     []shadow.Change // changes so far in the turn being recorded
-	Turns       int             // number of recorded turns
-	Latest      *store.Turn     // most recent turn, if any
+	Initialized bool           // turnback has been used here
+	Session     *store.Session // turn being recorded, if any
+	Pending     []store.File   // changes so far in the turn being recorded
+	Turns       int            // number of recorded turns
+	Latest      *store.Turn    // most recent turn, if any
 }
 
 // Status reports the recording state, including the changes made so far in
@@ -254,8 +254,12 @@ func (a *App) Status() (*Status, error) {
 	if err != nil {
 		return nil, err
 	}
-	st.Pending, err = sh.Changes(st.Session.Snapshot, tree)
-	return st, err
+	changes, err := sh.Changes(st.Session.Snapshot, tree)
+	if err != nil {
+		return nil, err
+	}
+	st.Pending = toFiles(changes)
+	return st, nil
 }
 
 func toFiles(changes []shadow.Change) []store.File {

@@ -70,6 +70,10 @@ type command struct {
 // commands lists the subcommands in the order they appear in help.
 var commands []*command
 
+func init() {
+	commands = []*command{startCommand, endCommand, statusCommand}
+}
+
 func lookup(name string) *command {
 	for _, c := range commands {
 		if c.name == name {
@@ -195,7 +199,7 @@ func parseFlags(fs *flag.FlagSet, args []string) ([]string, error) {
 			if errors.Is(err, flag.ErrHelp) {
 				return nil, err
 			}
-			return nil, usageErrorf("%s", strings.TrimPrefix(err.Error(), "flag ")).
+			return nil, usageErrorf("%s", flagMessage(err)).
 				withHint(fmt.Sprintf("Run 'turnback help %s' for usage.", fs.Name()))
 		}
 		args = fs.Args()
@@ -206,6 +210,34 @@ func parseFlags(fs *flag.FlagSet, args []string) ([]string, error) {
 		args = args[1:]
 	}
 	return append(positional, afterDashes...), nil
+}
+
+// flagMessage rewords the flag package's errors for people.
+func flagMessage(err error) string {
+	msg := err.Error()
+	if name, ok := strings.CutPrefix(msg, "flag provided but not defined: -"); ok {
+		return "unknown option " + dashes(name) + name
+	}
+	if name, ok := strings.CutPrefix(msg, "flag needs an argument: -"); ok {
+		return "option " + dashes(name) + name + " needs a value"
+	}
+	return strings.TrimPrefix(msg, "flag ")
+}
+
+func dashes(name string) string {
+	if len(name) == 1 {
+		return "-"
+	}
+	return "--"
+}
+
+// noArguments rejects positional arguments for commands that take none.
+func noArguments(name string, positional []string) error {
+	if len(positional) > 0 {
+		return usageErrorf("unexpected argument %q", positional[0]).
+			withHint(fmt.Sprintf("Run 'turnback help %s' for usage.", name))
+	}
+	return nil
 }
 
 func isTerminal(f *os.File) bool {
