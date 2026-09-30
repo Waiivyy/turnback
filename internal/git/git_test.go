@@ -25,7 +25,8 @@ func TestRunIgnoresInheritedRepositoryVariables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.TrimSpace(top); got != a.Dir {
+	// git prints forward slashes, also on Windows.
+	if got := filepath.FromSlash(strings.TrimSpace(top)); got != a.Dir {
 		t.Errorf("toplevel = %q, want %q", got, a.Dir)
 	}
 	index, err := r.Run("rev-parse", "--git-path", "index")

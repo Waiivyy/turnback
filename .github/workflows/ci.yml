@@ -45,17 +45,31 @@ jobs:
         run: sh -n install.sh && sh -n scripts/build-release.sh
 
   oldest-git:
-    # The README promises git 2.30 or newer; Debian 11 ships 2.30.2.
-    name: test (git 2.30, Debian 11)
+    # The README promises git 2.30 or newer, so the tests also run against
+    # git 2.30.0 itself, built from the official source release.
+    name: test (git 2.30.0)
     runs-on: ubuntu-latest
-    container: debian:bullseye
+    env:
+      GIT_VERSION: 2.30.0
     steps:
-      - name: Install git
-        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version: stable
+      - name: Restore git ${{ env.GIT_VERSION }}
+        id: cache
+        uses: actions/cache@v6
+        with:
+          path: ~/git-${{ env.GIT_VERSION }}
+          key: git-${{ env.GIT_VERSION }}-${{ runner.os }}
+      - name: Build git ${{ env.GIT_VERSION }}
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL "https://mirrors.edge.kernel.org/pub/software/scm/git/git-$GIT_VERSION.tar.gz" | tar -xz -C "$RUNNER_TEMP"
+          make -C "$RUNNER_TEMP/git-$GIT_VERSION" -j"$(nproc)" prefix="$HOME/git-$GIT_VERSION" \
+            NO_CURL=1 NO_EXPAT=1 NO_TCLTK=1 NO_GETTEXT=1 NO_PERL=1 NO_PYTHON=1 install
+      - name: Use git ${{ env.GIT_VERSION }}
+        run: echo "$HOME/git-$GIT_VERSION/bin" >> "$GITHUB_PATH"
       - name: Show the git version
         run: git --version
       - name: Test
