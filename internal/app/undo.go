@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -468,10 +469,41 @@ func conflictRegions(merged []byte) string {
 	return strings.Join(out, "")
 }
 
+// pendingRef keeps the state from right before an undo alive while the
+// undo is being applied.
+const pendingRef = "refs/turnback/pending-undo"
+
+// UndoAbortedError means an undo stopped before it could finish and put
+// every file back as it was: nothing was changed.
+type UndoAbortedError struct {
+	Cause error
+}
+
+func (e *UndoAbortedError) Error() string {
+	return fmt.Sprintf("the undo stopped and nothing was changed: %v", e.Cause)
+}
+
+func (e *UndoAbortedError) Unwrap() error { return e.Cause }
+
+// PartialUndoError means an undo stopped partway and could not put every
+// file back. What it did change is recorded as Turn, which can be undone.
+type PartialUndoError struct {
+	Turn  *store.Turn
+	Cause error
+}
+
+func (e *PartialUndoError) Error() string {
+	return fmt.Sprintf("the undo stopped partway: %v", e.Cause)
+}
+
+func (e *PartialUndoError) Unwrap() error { return e.Cause }
+
 // ApplyUndo carries out a plan and records the undo as a new turn. It
 // refuses when the plan has conflicts, when it would rewrite unsaved work
 // (unless force is set), or when a file it would write changed after the
-// plan was made.
+// plan was made. If the undo cannot finish, it either changes nothing
+// (*UndoAbortedError) or records what it changed as a turn of its own
+// (*PartialUndoError), so no change is ever left unrecorded.
 func (a *App) ApplyUndo(p *UndoPlan, force bool) (*store.Turn, error) {
 	if len(p.Conflicts()) > 0 {
 		return nil, ErrConflicts
@@ -510,25 +542,74 @@ func (a *App) ApplyUndo(p *UndoPlan, force bool) (*store.Turn, error) {
 		}
 		return nil, &ChangedError{Paths: changed}
 	}
-
-	id, err := a.Store.NextTurnID()
-	if err != nil {
-		return nil, err
-	}
 	desc := a.undoDescription(p.Turn, p.Paths)
-	before, err := sh.Commit(now, "", fmt.Sprintf("before turn %d: %s", id, desc))
+	before, err := sh.Commit(now, "", "before: "+desc)
 	if err != nil {
 		return nil, err
 	}
-	// Keep the saved state alive before touching any file.
-	if err := sh.SetRef(turnRef(id), before); err != nil {
+	if err := sh.SetRef(pendingRef, before); err != nil {
 		return nil, err
 	}
+
+	// From here on, Ctrl-C must not leave the working tree half changed:
+	// turnback ignores it, and git runs outside the terminal's process group.
+	signal.Ignore(os.Interrupt)
+	defer signal.Reset(os.Interrupt)
+	sh = sh.Uninterruptible()
+
 	if err := sh.Checkout(p.current, p.target); err != nil {
-		sh.DeleteRef(turnRef(id))
+		var co *shadow.CheckoutError
+		if errors.As(err, &co) && co.Restored {
+			sh.DeleteRef(pendingRef)
+			return nil, &UndoAbortedError{Cause: co.Cause}
+		}
+		partial, recErr := a.recordPartial(sh, p.Turn, p.Paths, before, err)
+		switch {
+		case recErr != nil:
+			return nil, fmt.Errorf("%w; recording what it changed failed too (%v). The state from before the undo is saved in .turnback/git as %s", err, recErr, pendingRef)
+		case partial == nil:
+			sh.DeleteRef(pendingRef)
+			return nil, &UndoAbortedError{Cause: err}
+		}
+		sh.DeleteRef(pendingRef)
+		return nil, &PartialUndoError{Turn: partial, Cause: err}
+	}
+
+	u, err := a.recordUndo(sh, p, before, desc)
+	if err != nil {
+		return nil, fmt.Errorf("the undo was applied, but recording it failed: %w. The state from before the undo is saved in .turnback/git as %s", err, pendingRef)
+	}
+	sh.DeleteRef(pendingRef)
+	sh.Tidy()
+	return u, nil
+}
+
+// recordUndo records a finished undo as a turn, from the verified state of
+// the private index.
+func (a *App) recordUndo(sh *shadow.Repo, p *UndoPlan, before, desc string) (*store.Turn, error) {
+	tree, err := sh.IndexTree()
+	if err != nil {
 		return nil, err
 	}
-	tree, err := sh.IndexTree()
+	return a.saveUndoTurn(sh, p.Turn, p.Paths, before, tree, desc)
+}
+
+// recordPartial records whatever an interrupted undo changed as a turn, so
+// it can be undone. It returns nil when nothing changed after all.
+func (a *App) recordPartial(sh *shadow.Repo, t *store.Turn, paths []string, before string, cause error) (*store.Turn, error) {
+	tree, err := sh.Snapshot()
+	if err != nil {
+		return nil, err
+	}
+	changes, err := sh.TreeDiff(before, tree)
+	if err != nil || len(changes) == 0 {
+		return nil, err
+	}
+	return a.saveUndoTurn(sh, t, paths, before, tree, fmt.Sprintf("Partial undo of turn %d: %s", t.ID, t.Description))
+}
+
+func (a *App) saveUndoTurn(sh *shadow.Repo, t *store.Turn, paths []string, before, tree, desc string) (*store.Turn, error) {
+	id, err := a.Store.NextTurnID()
 	if err != nil {
 		return nil, err
 	}
@@ -557,12 +638,11 @@ func (a *App) ApplyUndo(p *UndoPlan, force bool) (*store.Turn, error) {
 		Before:      before,
 		After:       after,
 		Files:       toFiles(changes),
-		Undoes:      &store.UndoInfo{Turn: p.Turn.ID, Paths: p.Paths},
+		Undoes:      &store.UndoInfo{Turn: t.ID, Paths: paths},
 	}
 	if err := a.Store.SaveTurn(u, patch); err != nil {
 		return nil, err
 	}
-	sh.Tidy()
 	return u, nil
 }
 

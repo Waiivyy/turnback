@@ -579,3 +579,43 @@ func TestSubmodulesAreLeftAlone(t *testing.T) {
 		t.Errorf("a.txt exists = %v, vendor/lib/.git exists = %v", repo.Exists("a.txt"), repo.Exists("vendor/lib/.git"))
 	}
 }
+
+func TestAnUndoThatCannotFinishChangesNothingAndLeavesNoTrace(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions and a non-root user")
+	}
+	repo := testutil.NewRepo(t)
+	repo.Write("ro/b.txt", "b1\n")
+	repo.Commit("initial")
+	a := openApp(t, repo)
+	turn(t, a, "Change b, add notes", func() {
+		repo.Write("ro/b.txt", "b2\n")
+		repo.Write("zz-notes.md", "notes\n")
+	})
+	p := planUndo(t, a, 1)
+	if err := os.Chmod(repo.Path("ro"), 0o555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(repo.Path("ro"), 0o755)
+
+	var aborted *app.UndoAbortedError
+	if _, err := a.ApplyUndo(p, false); !errors.As(err, &aborted) {
+		t.Fatalf("ApplyUndo err = %v, want UndoAbortedError", err)
+	}
+	if repo.Read("zz-notes.md") != "notes\n" || repo.Read("ro/b.txt") != "b2\n" {
+		t.Errorf("files changed: zz-notes.md exists = %v, ro/b.txt = %q", repo.Exists("zz-notes.md"), repo.Read("ro/b.txt"))
+	}
+	if turns, _ := a.Store.Turns(); len(turns) != 1 {
+		t.Errorf("%d turns recorded, want only the original one", len(turns))
+	}
+	if refs := repo.Git("--git-dir=.turnback/git", "for-each-ref", "--format=%(refname)"); refs != "refs/turns/1" {
+		t.Errorf("private refs = %q, want only refs/turns/1", refs)
+	}
+
+	// Once the folder is writable again the undo works, and no turn id was used up.
+	os.Chmod(repo.Path("ro"), 0o755)
+	u := applyUndo(t, a, planUndo(t, a, 1), false)
+	if u.ID != 2 || repo.Read("ro/b.txt") != "b1\n" || repo.Exists("zz-notes.md") {
+		t.Errorf("retry: turn %d, ro/b.txt = %q, zz-notes.md exists = %v", u.ID, repo.Read("ro/b.txt"), repo.Exists("zz-notes.md"))
+	}
+}
