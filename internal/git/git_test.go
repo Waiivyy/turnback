@@ -174,3 +174,25 @@ func TestDetachedCommandsStillRun(t *testing.T) {
 		t.Errorf("detached run = %q, %v", out, err)
 	}
 }
+
+func TestCommittedHandlesNamesThatStartWithAQuote(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not allow quotes in file names")
+	}
+	repo := testutil.NewRepo(t)
+	repo.Write(`"a.txt"`, "committed\n")
+	repo.Write(`"draft notes.txt`, "committed\n")
+	repo.Commit("initial")
+	repo.Write(`"a.txt"`, "edited, not saved\n")
+	repo.Write(`"draft notes.txt`, "edited, not saved\n")
+	// A decoy that holds exactly what HEAD has for "a.txt".
+	repo.Write("a.txt", "committed\n")
+
+	got, err := git.Committed(repo.Dir, []string{`"a.txt"`, `"draft notes.txt`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[`"a.txt"`] || got[`"draft notes.txt`] {
+		t.Errorf("Committed = %v, want both edited files reported as not committed", got)
+	}
+}

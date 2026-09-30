@@ -103,17 +103,31 @@ func Committed(root string, paths []string) (map[string]bool, error) {
 			toHash = append(toHash, p)
 		}
 	}
-	if len(toHash) > 0 {
-		// hash-object applies the same filters git add would.
-		ids, err := r.RunInput([]byte(strings.Join(toHash, "\n")+"\n"), "hash-object", "--stdin-paths")
+	// hash-object applies the same filters git add would. Names read from
+	// stdin that start with a double quote are un-quoted by git, so those
+	// few are passed as arguments instead.
+	var batch []string
+	for _, p := range toHash {
+		if !strings.HasPrefix(p, `"`) {
+			batch = append(batch, p)
+			continue
+		}
+		id, err := r.Run("hash-object", "--", p)
+		if err != nil {
+			return nil, err
+		}
+		out[p] = strings.TrimSpace(id) == head[p].id
+	}
+	if len(batch) > 0 {
+		ids, err := r.RunInput([]byte(strings.Join(batch, "\n")+"\n"), "hash-object", "--stdin-paths")
 		if err != nil {
 			return nil, err
 		}
 		lines := strings.Split(strings.TrimSpace(string(ids)), "\n")
-		if len(lines) != len(toHash) {
-			return nil, fmt.Errorf("git hash-object returned %d ids for %d files", len(lines), len(toHash))
+		if len(lines) != len(batch) {
+			return nil, fmt.Errorf("git hash-object returned %d ids for %d files", len(lines), len(batch))
 		}
-		for i, p := range toHash {
+		for i, p := range batch {
 			out[p] = lines[i] == head[p].id
 		}
 	}
