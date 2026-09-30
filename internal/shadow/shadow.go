@@ -107,6 +107,8 @@ func (r *Repo) syncSettings() ([]string, error) {
 	opts := []string{
 		"--git-dir=" + r.gitDir,
 		"--work-tree=" + r.root,
+		// Paths are always literal: "src/[id].tsx" is a file, not a glob.
+		"--literal-pathspecs",
 		"-c", "core.hooksPath=" + filepath.Join(r.gitDir, "hooks-disabled"),
 		"-c", "core.fsmonitor=false",
 		"-c", "core.autocrlf=false",
@@ -242,6 +244,16 @@ func (r *Repo) Patch(from, to string) (string, error) {
 func (r *Repo) Tidy() error {
 	_, err := r.run.Run("gc", "--auto", "--quiet")
 	return err
+}
+
+// Diff returns a readable diff between two snapshots, limited to paths if
+// any are given. Binary files are summarized in one line.
+func (r *Repo) Diff(from, to string, paths ...string) (string, error) {
+	args := []string{"diff-tree", "-p", "-M", "--no-color", from, to}
+	if len(paths) > 0 {
+		args = append(append(args, "--"), paths...)
+	}
+	return r.run.Run(args...)
 }
 
 // CountFiles returns the number of files in a snapshot.

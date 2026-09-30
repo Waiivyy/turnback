@@ -28,11 +28,22 @@ const (
 const formatVersion = 1
 
 var (
-	// ErrTurnNotFound means no turn has the requested id.
+	// ErrTurnNotFound means no turn has the requested id. Errors returned
+	// for a specific id are NotFoundError values that match it.
 	ErrTurnNotFound = errors.New("turn not found")
 	// ErrLocked means another turnback command holds the lock.
 	ErrLocked = errors.New("another turnback command is running in this repository")
 )
+
+// NotFoundError reports a turn id that does not exist.
+type NotFoundError struct {
+	ID int
+}
+
+func (e *NotFoundError) Error() string { return fmt.Sprintf("there is no turn %d", e.ID) }
+
+// Is makes errors.Is(err, ErrTurnNotFound) true.
+func (e *NotFoundError) Is(target error) bool { return target == ErrTurnNotFound }
 
 // Store is the .turnback folder of one working tree.
 type Store struct {
@@ -203,7 +214,7 @@ func (s *Store) Turn(id int) (*Turn, error) {
 	var t Turn
 	if err := readJSON(s.turnPath(id, "json"), &t); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("%w: %d", ErrTurnNotFound, id)
+			return nil, &NotFoundError{ID: id}
 		}
 		return nil, err
 	}
@@ -214,7 +225,7 @@ func (s *Store) Turn(id int) (*Turn, error) {
 func (s *Store) Patch(id int) (string, error) {
 	b, err := os.ReadFile(s.turnPath(id, "patch"))
 	if errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("%w: %d", ErrTurnNotFound, id)
+		return "", &NotFoundError{ID: id}
 	}
 	return string(b), err
 }
