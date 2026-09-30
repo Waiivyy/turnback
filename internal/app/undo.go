@@ -170,7 +170,9 @@ func (a *App) plan(sh *shadow.Repo, t *store.Turn, current string, limit []strin
 	}
 
 	// A path missing from the current snapshot may be deleted, or ignored
-	// by git by now; git says which. Ignored paths are never written.
+	// by git by now; git says which. Ignored paths are never written: a file
+	// written there would be outside every later snapshot, so the undo could
+	// not be undone.
 	var absent []string
 	for _, c := range changes {
 		if cur := c.New; (changedSince[c.Path] && now[c.Path] == nil) || (!changedSince[c.Path] && cur == nil) {
@@ -184,6 +186,7 @@ func (a *App) plan(sh *shadow.Repo, t *store.Turn, current string, limit []strin
 
 	// Pass 1: decide what to do with each file on its own.
 	targets := make(map[string]*shadow.Entry)
+	unrestored := make(map[string]bool) // files the turn deleted that stay deleted
 	for _, c := range changes {
 		cur := c.New
 		if changedSince[c.Path] {
@@ -191,6 +194,9 @@ func (a *App) plan(sh *shadow.Repo, t *store.Turn, current string, limit []strin
 		}
 		f := UndoFile{Path: c.Path}
 		if ignored[c.Path] {
+			if c.Old != nil && c.New == nil {
+				unrestored[c.Path] = true
+			}
 			f.Action, f.Reason = UndoSkip, "git ignores it now, and turnback leaves ignored files alone"
 			p.Files = append(p.Files, f)
 			continue
@@ -203,6 +209,20 @@ func (a *App) plan(sh *shadow.Repo, t *store.Turn, current string, limit []strin
 			targets[c.Path] = target
 		}
 		p.Files = append(p.Files, f)
+	}
+
+	// A rename is only undone whole. If its old name cannot come back, the
+	// new name stays too: deleting it would leave neither.
+	for _, tf := range t.Files {
+		if tf.OldPath == "" || !unrestored[tf.OldPath] {
+			continue
+		}
+		for i := range p.Files {
+			if f := &p.Files[i]; f.Path == tf.Path && f.Action == UndoDelete {
+				f.Action, f.Reason = UndoSkip, fmt.Sprintf("kept: turn %d renamed %s to it, and git ignores %s now", t.ID, tf.OldPath, tf.OldPath)
+				delete(targets, f.Path)
+			}
+		}
 	}
 
 	// Pass 2: a file brought back must have room, unless this same undo

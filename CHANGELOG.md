@@ -36,6 +36,16 @@ and the project uses [Semantic Versioning](https://semver.org/).
   `.turnback/`, since those can come from anyone who can push to it.
 - git's pathspec environment variables, such as `GIT_LITERAL_PATHSPECS`, no
   longer change how turnback's own git commands read paths.
+- Undoing a turn that renamed a file whose name git ignores, such as a
+  force-added `.env.example` moved with `git mv`, deleted the new name while
+  leaving the old one missing, so the file was lost. A rename is now undone
+  whole or not at all, and a file git ignores by name is left as it is.
+- `turnback end` and `turnback undo` failed with a git error when a turn had
+  replaced a folder with a symbolic link or a submodule, or when a file name
+  started with `:`. Such paths are now handled like any other.
+- Finding the files git ignores no longer searches the whole index once per
+  file. A dry run for a turn that deleted 20,000 of 30,000 files went from
+  about 4 seconds to under half a second.
 
 ### Changed
 

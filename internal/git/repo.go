@@ -147,21 +147,30 @@ func BlobID(content []byte, hexLen int) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// Ignored returns the subset of paths (relative to root) that the
-// repository ignores now. Tracked files are never ignored, whatever the
-// patterns say, and on case-insensitive file systems a different spelling
-// of a tracked file counts as tracked, just as git sees it.
+// Ignored returns which of paths, relative to root with forward slashes,
+// git ignores now, whether or not they exist. A tracked file is never
+// ignored, in any spelling git would match it by, and a path beyond a
+// symbolic link or inside a nested repository is not reported either: git
+// does not look there at all.
 func Ignored(root string, paths []string) (map[string]bool, error) {
 	out := make(map[string]bool)
-	if len(paths) == 0 {
-		return out, nil
-	}
 	var list bytes.Buffer
+	hidden := make(map[string]bool) // folder -> it or a folder above it is a link or a repository
 	for _, p := range paths {
-		list.WriteString(p)
+		if outOfView(root, p, hidden) {
+			continue
+		}
+		// "./" stops git from reading a name such as ":!notes" as pathspec magic.
+		list.WriteString("./" + p)
 		list.WriteByte(0)
 	}
-	res, err := (Runner{Dir: root}).RunInput(list.Bytes(), "check-ignore", "-z", "--stdin")
+	if list.Len() == 0 {
+		return out, nil
+	}
+	// With --no-index git only matches the ignore rules. Without it, git
+	// also looks each path up in the index, one full scan per path, so the
+	// tracked files are filtered out below instead.
+	res, err := (Runner{Dir: root}).RunInput(list.Bytes(), "check-ignore", "--no-index", "-z", "--stdin")
 	var gitErr *Error
 	if errors.As(err, &gitErr) && gitErr.ExitCode == 1 {
 		return out, nil // none of the paths is ignored
@@ -169,12 +178,80 @@ func Ignored(root string, paths []string) (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
+	var matched []string
 	for _, p := range strings.Split(string(res), "\x00") {
-		if p != "" {
+		if p = strings.TrimPrefix(p, "./"); p != "" {
+			matched = append(matched, p)
+		}
+	}
+	if len(matched) == 0 {
+		return out, nil
+	}
+	tracked, fold, err := trackedPaths(root)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range matched {
+		key := p
+		if fold {
+			key = strings.ToLower(p)
+		}
+		if !tracked[key] {
 			out[p] = true
 		}
 	}
 	return out, nil
+}
+
+// outOfView reports whether a folder above path is a symbolic link or a
+// nested repository, where git does not look for path at all.
+func outOfView(root, path string, cache map[string]bool) bool {
+	i := strings.LastIndexByte(path, '/')
+	if i < 0 {
+		return false
+	}
+	dir := path[:i]
+	hidden, seen := cache[dir]
+	if !seen {
+		full := filepath.Join(root, filepath.FromSlash(dir))
+		fi, err := os.Lstat(full)
+		hidden = err == nil && fi.Mode()&os.ModeSymlink != 0
+		if !hidden {
+			_, err := os.Lstat(filepath.Join(full, ".git"))
+			hidden = err == nil
+		}
+		if !hidden {
+			hidden = outOfView(root, dir, cache)
+		}
+		cache[dir] = hidden
+	}
+	return hidden
+}
+
+// trackedPaths returns the paths in the index, lower-cased if git compares
+// names without regard to case in this repository, and whether it does.
+func trackedPaths(root string) (map[string]bool, bool, error) {
+	run := Runner{Dir: root}
+	cfg, err := run.Run("config", "--type=bool", "--default=false", "core.ignorecase")
+	if err != nil {
+		return nil, false, err
+	}
+	fold := strings.TrimSpace(cfg) == "true"
+	listed, err := run.Run("ls-files", "-z")
+	if err != nil {
+		return nil, false, err
+	}
+	tracked := make(map[string]bool)
+	for _, p := range strings.Split(listed, "\x00") {
+		if p == "" {
+			continue
+		}
+		if fold {
+			p = strings.ToLower(p)
+		}
+		tracked[p] = true
+	}
+	return tracked, fold, nil
 }
 
 // TrackedIn returns the first path git tracks inside dir, a folder at the

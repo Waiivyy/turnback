@@ -119,7 +119,15 @@ outside the repository root is touched.
 An undo writes only paths that the undone turn changed:
 
 - A path git ignores by now is left alone and listed as skipped, even if the
-  turn changed it. The rest of the undo still applies.
+  turn changed it. The rest of the undo still applies. A file written there
+  would be missing from every later snapshot, so the undo could not itself
+  be undone.
+- A rename is undone whole or not at all. If git ignores the old name by
+  now, as happens when a turn runs `git mv` on a file that was tracked
+  despite an ignore rule, the new name is kept as well, so the file is never
+  lost.
+- Nothing beyond a symbolic link or inside a submodule or nested repository
+  is written. git does not look at such paths, and neither does turnback.
 - An undo never overwrites or writes through something git does not track.
   If an untracked file, a folder of build output or a symlinked folder stands
   where a file must come back, that file is a conflict and nothing is

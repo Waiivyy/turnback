@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -195,5 +196,75 @@ func TestCommittedHandlesNamesThatStartWithAQuote(t *testing.T) {
 	}
 	if got[`"a.txt"`] || got[`"draft notes.txt`] {
 		t.Errorf("Committed = %v, want both edited files reported as not committed", got)
+	}
+}
+
+func TestIgnoredMatchesTheRulesButNeverTrackedFiles(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write(".gitignore", "*.log\nbuild/\n")
+	repo.Write("kept.log", "tracked on purpose\n")
+	repo.Git("add", ".gitignore")
+	repo.Git("add", "-f", "kept.log")
+	repo.Write("debug.log", "x\n")
+
+	got, err := git.Ignored(repo.Dir, []string{"debug.log", "kept.log", "missing.log", "build/out.js", "src/app.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"debug.log": true, "missing.log": true, "build/out.js": true}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Ignored = %v, want %v", got, want)
+	}
+}
+
+func TestIgnoredCountsOtherSpellingsOfTrackedFilesAsTracked(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Git("config", "core.ignorecase", "true")
+	repo.Write(".gitignore", "*.local\n")
+	repo.Write("settings.local", "x\n")
+	repo.Git("add", "-f", "settings.local")
+	got, err := git.Ignored(repo.Dir, []string{"Settings.local", "other.local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, map[string]bool{"other.local": true}) {
+		t.Errorf("Ignored = %v, want only other.local", got)
+	}
+}
+
+func TestIgnoredSkipsPathsGitCannotSee(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write(".gitignore", "*.ini\n")
+	shared := t.TempDir()
+	if err := os.WriteFile(filepath.Join(shared, "app.ini"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(shared, repo.Path("config")); err != nil {
+		t.Skipf("cannot create symlinks here: %v", err)
+	}
+	repo.Write("vendor/lib/.git", "gitdir: elsewhere\n")
+	repo.Write("vendor/lib/f.ini", "x\n")
+	// git itself refuses these paths outright; they are simply not ignored.
+	got, err := git.Ignored(repo.Dir, []string{"config/app.ini", "vendor/lib/f.ini", "top.ini"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, map[string]bool{"top.ini": true}) {
+		t.Errorf("Ignored = %v, want only top.ini", got)
+	}
+}
+
+func TestIgnoredReadsNamesThatLookLikePathspecMagicLiterally(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not allow : in file names")
+	}
+	repo := testutil.NewRepo(t)
+	repo.Write(".gitignore", ":(top)todo\n")
+	got, err := git.Ignored(repo.Dir, []string{":!notes", ":(top)todo", ":/x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, map[string]bool{":(top)todo": true}) {
+		t.Errorf("Ignored = %v, want only :(top)todo", got)
 	}
 }
