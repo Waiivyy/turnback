@@ -106,7 +106,8 @@ func runUndo(env *Env, args []string) error {
 		fmt.Fprintf(env.Stdout, "\nDry run: nothing was changed. To apply it, run '%s --yes'.\n", again)
 		return nil
 	case !yes:
-		fmt.Fprint(env.Stdout, "\nApply this undo? [y/N] ")
+		// The question goes to stderr so it stays visible if stdout is redirected.
+		fmt.Fprint(env.Stderr, "\nApply this undo? [y/N] ")
 		answer, _ := bufio.NewReader(env.Stdin).ReadString('\n')
 		if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
 			fmt.Fprintln(env.Stdout, "Nothing was changed.")
@@ -119,7 +120,7 @@ func runUndo(env *Env, args []string) error {
 		return explain(env, err)
 	}
 	added, deleted := u.Lines()
-	fmt.Fprintf(env.Stdout, "\nUndid turn %d: %s changed, +%d -%d.\n", turn.ID, plural(len(u.Files), "file"), added, deleted)
+	fmt.Fprintf(env.Stdout, "\nUndid turn %d: %s changed, +%d -%d.\n", turn.ID, plural(plan.Writes(), "file"), added, deleted)
 	fmt.Fprintf(env.Stdout, "Recorded as turn %d. To take this undo back, run 'turnback undo %d'.\n", u.ID, u.ID)
 	return nil
 }

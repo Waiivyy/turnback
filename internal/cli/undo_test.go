@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -79,8 +81,12 @@ func TestUndoWithYesApplies(t *testing.T) {
 
 func TestUndoAsksBeforeApplyingInATerminal(t *testing.T) {
 	repo := oneTurn(t)
-	_, stdout, _ := runTyping(t, repo.Dir, "n\n", "undo", "1")
-	if !strings.Contains(stdout, "Apply this undo? [y/N]") || !strings.Contains(stdout, "Nothing was changed.") {
+	_, stdout, stderr := runTyping(t, repo.Dir, "n\n", "undo", "1")
+	// The question goes to stderr, so it stays visible when stdout is redirected.
+	if !strings.Contains(stderr, "Apply this undo? [y/N]") || strings.Contains(stdout, "Apply this undo?") {
+		t.Errorf("prompt: stdout %q, stderr %q", stdout, stderr)
+	}
+	if !strings.Contains(stdout, "Nothing was changed.") {
 		t.Errorf("output after answering no:\n%s", stdout)
 	}
 	if repo.Read("a.txt") != "one\ntwo\n" {
@@ -211,5 +217,42 @@ func TestUndoWarnsWhenLaterTurnsMayDependOnIt(t *testing.T) {
 				t.Errorf("note line is %d characters, want it wrapped at 76: %q", len(line), line)
 			}
 		}
+	}
+}
+
+func TestAnUndoThatCannotFinishSaysNothingChanged(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions and a non-root user")
+	}
+	repo := testutil.NewRepo(t)
+	repo.Write("ro/b.txt", "b1\n")
+	repo.Commit("initial")
+	record(t, repo, "Change b", func() { repo.Write("ro/b.txt", "b2\n") })
+	if err := os.Chmod(repo.Path("ro"), 0o555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(repo.Path("ro"), 0o755)
+
+	code, _, stderr := run(t, repo.Dir, "undo", "1", "--yes")
+	if code != 1 || !strings.Contains(stderr, "the undo stopped and nothing was changed") {
+		t.Errorf("exit %d, stderr %q", code, stderr)
+	}
+	if repo.Read("ro/b.txt") != "b2\n" {
+		t.Error("ro/b.txt changed")
+	}
+}
+
+func TestUndoSummaryCountsEveryFileWritten(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	doc := "a document long enough\nfor git to notice\nthat it was renamed\n"
+	repo.Write("old.md", doc)
+	repo.Commit("initial")
+	record(t, repo, "Rename", func() {
+		repo.Write("new.md", doc)
+		repo.Remove("old.md")
+	})
+	_, stdout, _ := run(t, repo.Dir, "undo", "1", "--yes")
+	if !strings.Contains(stdout, "Undid turn 1: 2 files changed") {
+		t.Errorf("summary for undoing a rename:\n%s", stdout)
 	}
 }

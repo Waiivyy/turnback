@@ -131,6 +131,15 @@ func explain(env *Env, err error) error {
 		return errorf("no turns recorded yet").
 			withHint("Record one with 'turnback start' and 'turnback end'.")
 	}
+	var aborted *app.UndoAbortedError
+	if errors.As(err, &aborted) {
+		return errorf("%v", err).withHint("Fix the problem above, for example a folder that is not writable, and run the undo again.")
+	}
+	var partial *app.PartialUndoError
+	if errors.As(err, &partial) {
+		return errorf("%v", err).withHint(fmt.Sprintf(
+			"What the undo did change is recorded as turn %d. Run 'turnback undo %d' to take it back.", partial.Turn.ID, partial.Turn.ID))
+	}
 	var changed *app.ChangedError
 	if errors.As(err, &changed) {
 		return errorf("%s changed after the preview was made, so nothing was changed", joinAnd(changed.Paths)).
