@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go: ["1.22", stable]
+        go: ["1.24", stable]
     defaults:
       run:
         shell: bash

@@ -27,6 +27,14 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - CI runs the tests on Windows too, and against git 2.30.0, the oldest
   version turnback supports.
 
+### Changed
+
+- Building from source needs Go 1.24 or newer. Older Go versions leave out a
+  load command that current macOS requires of programs using the network
+  package, which `turnback ui` needs, so their builds would not start. With
+  Go's default settings, `go install` fetches a new enough Go by itself. The
+  prebuilt binaries are not affected.
+
 ## [0.1.0] - 2026-09-30
 
 First release.

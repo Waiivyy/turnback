@@ -75,7 +75,7 @@ to pin a version.
 [releases page](https://github.com/Waiivyy/turnback/releases/latest), unpack
 it and put `turnback` on your `PATH`.
 
-**With Go** (1.22 or newer):
+**With Go** (1.24 or newer):
 
 ```bash
 go install github.com/Waiivyy/turnback@latest

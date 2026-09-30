@@ -1,3 +1,3 @@
 module github.com/Waiivyy/turnback
 
-go 1.22
+go 1.24
