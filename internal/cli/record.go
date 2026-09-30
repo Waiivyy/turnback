@@ -117,6 +117,7 @@ func runEnd(env *Env, args []string) error {
 		printFiles(env, t.Files)
 		added, deleted := t.Lines()
 		fmt.Fprintf(env.Stdout, "%s changed, +%d -%d\n", plural(len(t.Files), "file"), added, deleted)
+		fmt.Fprintf(env.Stdout, "See it with 'turnback show %d', undo it with 'turnback undo %d'.\n", t.ID, t.ID)
 	}
 	return nil
 }

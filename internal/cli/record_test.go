@@ -33,6 +33,7 @@ func TestStartThenEndRecordsATurn(t *testing.T) {
 		"M  a.txt  +1",
 		"A  b.txt  +1",
 		"2 files changed, +2 -0",
+		"See it with 'turnback show 1', undo it with 'turnback undo 1'.",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("end output lacks %q:\n%s", want, stdout)
