@@ -54,7 +54,21 @@ one you don't want while everything else stays put.
 
 ## Install
 
-turnback needs **git 2.30 or newer**.
+**macOS and Linux**, one line, no Go needed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Waiivyy/turnback/main/install.sh | sh
+```
+
+The [script](install.sh) downloads the binary for your machine from the
+[latest release](https://github.com/Waiivyy/turnback/releases/latest), checks
+its SHA-256 checksum and installs it to `~/.local/bin`, without root rights.
+Set `TURNBACK_INSTALL_DIR` to put it elsewhere, or `TURNBACK_VERSION=v0.1.0`
+to pin a version.
+
+**Windows**, or by hand: download the archive for your system from the
+[releases page](https://github.com/Waiivyy/turnback/releases/latest), unpack
+it and put `turnback` on your `PATH`.
 
 **With Go** (1.22 or newer):
 
@@ -70,8 +84,11 @@ cd turnback
 go build -o turnback .
 ```
 
-Prebuilt binaries for macOS, Linux and Windows will come with the first
-release.
+turnback needs **git 2.30 or newer**. Check the install with
+`turnback --version`.
+
+To uninstall, delete the binary (`rm ~/.local/bin/turnback` if you used the
+script) and the `.turnback/` folder in any repository you used it in.
 
 ## Quickstart
 
