@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Waiivyy/turnback/internal/git"
 )
@@ -303,6 +304,28 @@ func (r *Repo) Commit(tree, parent, message string) (string, error) {
 func (r *Repo) SetRef(ref, id string) error {
 	_, err := r.run.Run("update-ref", ref, id)
 	return err
+}
+
+// RefTarget returns the commit ref points at, if the ref exists.
+func (r *Repo) RefTarget(ref string) (string, bool) {
+	out, err := r.run.Run("rev-parse", "--verify", "-q", ref)
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(out), true
+}
+
+// CommitTime returns when a snapshot commit was made.
+func (r *Repo) CommitTime(commit string) (time.Time, error) {
+	out, err := r.run.Run("log", "-1", "--format=%ct", commit)
+	if err != nil {
+		return time.Time{}, err
+	}
+	secs, err := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Unix(secs, 0), nil
 }
 
 // DeleteRef removes ref.

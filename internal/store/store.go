@@ -23,6 +23,7 @@ const DirName = ".turnback"
 const (
 	KindSession = "session" // recorded between "turnback start" and "turnback end"
 	KindUndo    = "undo"    // written by "turnback undo"
+	KindCommit  = "commit"  // recorded by the post-commit hook
 )
 
 const formatVersion = 1
@@ -130,6 +131,7 @@ type Turn struct {
 	After       string    `json:"after"`  // snapshot commit after the turn
 	Files       []File    `json:"files"`
 	Undoes      *UndoInfo `json:"undoes,omitempty"`
+	Commit      string    `json:"commit,omitempty"` // the user's commit that closed a commit turn
 }
 
 // Lines returns the total lines added and deleted by the turn.

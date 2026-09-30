@@ -779,6 +779,7 @@ func (a *App) saveUndoTurn(sh *shadow.Repo, t *store.Turn, paths []string, befor
 	if err := a.Store.SaveTurn(u, patch); err != nil {
 		return nil, err
 	}
+	moveCheckpoint(sh, after)
 	return u, nil
 }
 

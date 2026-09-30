@@ -206,6 +206,7 @@ func (a *App) End(opts EndOptions) (*Ended, error) {
 	if err := a.Store.SaveTurn(turn, patch); err != nil {
 		return nil, err
 	}
+	moveCheckpoint(sh, commit)
 	res.Turn = turn
 	if err := a.closeSession(sh); err != nil {
 		return res, err
