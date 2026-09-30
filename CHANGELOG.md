@@ -27,6 +27,16 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - CI runs the tests on Windows too, and against git 2.30.0, the oldest
   version turnback supports.
 
+### Fixed
+
+- A repository could ship a symbolic link at `.turnback/lock` and make the
+  first `turnback start` overwrite the file it points to. The lock is now
+  opened without following links, links anywhere in turnback's folder are
+  refused, and turnback does not run in a repository that tracks files in
+  `.turnback/`, since those can come from anyone who can push to it.
+- git's pathspec environment variables, such as `GIT_LITERAL_PATHSPECS`, no
+  longer change how turnback's own git commands read paths.
+
 ### Changed
 
 - Building from source needs Go 1.24 or newer. Older Go versions leave out a

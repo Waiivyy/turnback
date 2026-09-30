@@ -23,6 +23,15 @@ const (
 	lockOffset = 0x7fffffff
 )
 
+// openLock opens the lock file, creating it. Windows has no flag to refuse
+// a link, so a link that is already there is refused before opening.
+func openLock(path string) (*os.File, error) {
+	if fi, err := os.Lstat(path); err == nil && !fi.Mode().IsRegular() {
+		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+	}
+	return os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
+}
+
 // tryLock takes an exclusive LockFileEx lock on f without waiting.
 func tryLock(f *os.File) (bool, error) {
 	ol := syscall.Overlapped{Offset: lockOffset}

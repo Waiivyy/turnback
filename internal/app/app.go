@@ -47,7 +47,30 @@ func Open(dir string, now func() time.Time) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &App{Root: loc.Root, Prefix: loc.Prefix, Store: store.Open(loc.Root), now: now}, nil
+	// Files in .turnback that git tracks came with the repository, from
+	// anyone who can push to it, so turnback does not use them. A planted
+	// lock symlink, for one, would aim turnback's writes at another file.
+	tracked, err := git.TrackedIn(loc.Root, store.DirName)
+	if err != nil {
+		return nil, err
+	}
+	if tracked != "" {
+		return nil, &TrackedStateError{Path: tracked}
+	}
+	st := store.Open(loc.Root)
+	if err := st.Check(); err != nil {
+		return nil, err
+	}
+	return &App{Root: loc.Root, Prefix: loc.Prefix, Store: st, now: now}, nil
+}
+
+// TrackedStateError reports that git tracks files in turnback's folder.
+type TrackedStateError struct {
+	Path string // the first such path, relative to the root
+}
+
+func (e *TrackedStateError) Error() string {
+	return fmt.Sprintf("git tracks %s, inside the folder where turnback keeps its records", e.Path)
 }
 
 // begin creates turnback's folder if needed, takes the lock and opens the

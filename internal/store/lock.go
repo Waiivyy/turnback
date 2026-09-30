@@ -19,9 +19,21 @@ import (
 // different files of the same name.
 func (s *Store) Lock(wait time.Duration) (unlock func(), err error) {
 	path := filepath.Join(s.Dir, "lock")
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
+	f, err := openLock(path)
 	if err != nil {
+		if fi, lerr := os.Lstat(path); lerr == nil && !fi.Mode().IsRegular() {
+			return nil, s.unsafe("lock", fi)
+		}
 		return nil, err
+	}
+	// The file is truncated and written below, so it must be the regular
+	// file turnback created, never a link planted to aim that at another.
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		f.Close()
+		if err != nil {
+			return nil, err
+		}
+		return nil, s.unsafe("lock", fi)
 	}
 	deadline := time.Now().Add(wait)
 	for {

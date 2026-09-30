@@ -313,3 +313,76 @@ func TestLockIsReleasedWhenItsHolderDies(t *testing.T) {
 	}
 	unlock()
 }
+
+// symlink makes a symbolic link or skips the test where that needs
+// privileges the test does not have.
+func symlink(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("cannot create symlinks here: %v", err)
+	}
+}
+
+func TestLockNeverWritesThroughASymlink(t *testing.T) {
+	s, _ := initStore(t)
+	victim := filepath.Join(t.TempDir(), "victim")
+	if err := os.WriteFile(victim, []byte("precious\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	symlink(t, victim, filepath.Join(s.Dir, "lock"))
+	unlock, err := s.Lock(0)
+	if err == nil {
+		unlock()
+		t.Error("Lock used a lock file that is a symlink")
+	}
+	var unsafe *store.UnsafeError
+	if !errors.As(err, &unsafe) || unsafe.Path != filepath.Join(store.DirName, "lock") {
+		t.Errorf("err = %v, want an UnsafeError for .turnback/lock", err)
+	}
+	if got, _ := os.ReadFile(victim); string(got) != "precious\n" {
+		t.Errorf("the link's target now holds %q", got)
+	}
+}
+
+func TestSymlinkedStoreFoldersAreRefused(t *testing.T) {
+	for _, name := range []string{"", "git", "turns"} {
+		t.Run("."+name, func(t *testing.T) {
+			repo := testutil.NewRepo(t)
+			elsewhere := t.TempDir()
+			s := store.Open(repo.Dir)
+			link := s.Dir
+			if name != "" {
+				if err := os.MkdirAll(s.Dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				link = filepath.Join(s.Dir, name)
+			}
+			symlink(t, elsewhere, link)
+			var unsafe *store.UnsafeError
+			if err := s.Check(); !errors.As(err, &unsafe) {
+				t.Errorf("Check() = %v, want an UnsafeError", err)
+			}
+			if err := s.Init(); !errors.As(err, &unsafe) {
+				t.Errorf("Init() = %v, want an UnsafeError", err)
+			}
+			if entries, _ := os.ReadDir(elsewhere); len(entries) > 0 {
+				t.Errorf("turnback wrote %d entries through the link", len(entries))
+			}
+		})
+	}
+}
+
+func TestARealStoreFolderPassesTheCheck(t *testing.T) {
+	s, _ := initStore(t)
+	unlock, err := s.Lock(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+	if err := s.Check(); err != nil {
+		t.Errorf("Check() = %v on a folder turnback made itself", err)
+	}
+	if err := store.Open(t.TempDir()).Check(); err != nil {
+		t.Errorf("Check() = %v before first use", err)
+	}
+}

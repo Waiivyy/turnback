@@ -176,3 +176,14 @@ func Ignored(root string, paths []string) (map[string]bool, error) {
 	}
 	return out, nil
 }
+
+// TrackedIn returns the first path git tracks inside dir, a folder at the
+// top of the working tree, spelled in any case, or "" if there is none.
+func TrackedIn(root, dir string) (string, error) {
+	out, err := Runner{Dir: root}.Run("ls-files", "-z", "--", ":(icase)"+dir)
+	if err != nil {
+		return "", err
+	}
+	first, _, _ := strings.Cut(out, "\x00")
+	return first, nil
+}

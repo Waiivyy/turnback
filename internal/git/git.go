@@ -82,7 +82,7 @@ func (r Runner) RunInput(stdin []byte, args ...string) ([]byte, error) {
 
 // locationVars are environment variables that point git at a repository,
 // index or object store other than the one found from the working directory,
-// or change how diffs are produced.
+// or change how diffs are produced or how pathspecs are read.
 var locationVars = map[string]bool{
 	"GIT_DIR":                          true,
 	"GIT_WORK_TREE":                    true,
@@ -99,6 +99,10 @@ var locationVars = map[string]bool{
 	"GIT_EXTERNAL_DIFF":                true,
 	"GIT_DIFF_OPTS":                    true,
 	"GIT_OPTIONAL_LOCKS":               true,
+	"GIT_LITERAL_PATHSPECS":            true,
+	"GIT_GLOB_PATHSPECS":               true,
+	"GIT_NOGLOB_PATHSPECS":             true,
+	"GIT_ICASE_PATHSPECS":              true,
 }
 
 func cleanEnv(env []string) []string {

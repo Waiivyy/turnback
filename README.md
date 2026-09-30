@@ -505,6 +505,9 @@ turnback exists to fix mistakes, so it is built to never make new ones:
   puts everything back and tells you nothing changed. If even that fails, what
   did change is recorded as a turn you can undo.
 - **Every undo can be undone**, because it is recorded as a turn.
+- **Only its own records.** turnback does not run in a repository that tracks
+  files in `.turnback/`, and never follows a link there, so a repository you
+  clone cannot aim turnback's writes at your other files.
 
 One limit to know: conflict detection works on text. If turn 3 calls a function
 that turn 2 added in another file, undoing turn 2 applies cleanly and breaks

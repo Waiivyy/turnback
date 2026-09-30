@@ -77,9 +77,54 @@ to your repository's history, index, refs or stash.
 Deleting this folder removes all turnback history for this repository.
 `
 
+// UnsafeError reports something in turnback's folder that turnback did not
+// make and will not use, such as a symbolic link.
+type UnsafeError struct {
+	Path   string // relative to the working tree root, as in .turnback/lock
+	Reason string // what is wrong with it, as in "is a symbolic link"
+}
+
+func (e *UnsafeError) Error() string { return filepath.ToSlash(e.Path) + " " + e.Reason }
+
+func (s *Store) unsafe(rel string, fi fs.FileInfo) *UnsafeError {
+	reason := "is not a regular file"
+	switch {
+	case fi.Mode()&fs.ModeSymlink != 0:
+		reason = "is a symbolic link"
+	case rel != "lock":
+		reason = "is not a folder"
+	}
+	return &UnsafeError{Path: filepath.Join(DirName, rel), Reason: reason}
+}
+
+// Check makes sure turnback's folder holds only what turnback makes itself:
+// real folders, and a lock that is a regular file. A link there, planted by
+// a repository or an archive, could otherwise redirect turnback's writes to
+// any file the user owns.
+func (s *Store) Check() error {
+	for _, rel := range []string{"", "git", "turns", "lock"} {
+		fi, err := os.Lstat(filepath.Join(s.Dir, rel))
+		switch {
+		case errors.Is(err, fs.ErrNotExist) && rel == "":
+			return nil
+		case errors.Is(err, fs.ErrNotExist):
+			continue
+		case err != nil:
+			return err
+		}
+		if rel == "lock" && !fi.Mode().IsRegular() || rel != "lock" && fi.Mode().Type() != fs.ModeDir {
+			return s.unsafe(rel, fi)
+		}
+	}
+	return nil
+}
+
 // Init creates the folder. Its own .gitignore makes git ignore everything
 // inside, so the user's .gitignore never needs editing.
 func (s *Store) Init() error {
+	if err := s.Check(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Join(s.Dir, "turns"), 0o755); err != nil {
 		return err
 	}

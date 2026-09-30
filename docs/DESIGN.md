@@ -42,10 +42,24 @@ Everything lives in `.turnback/` at the root of the working tree:
   turns/0001.json   turn metadata: times, description, files, snapshot ids
   turns/0001.patch  the turn's diff as a standard patch
   git/              private git repository that holds the snapshots
-  lock              exists while a turnback command is changing state
+  lock              locked by the command that is changing state, if any
 ```
 
 Deleting the folder removes every trace of turnback from the repository.
+
+Commands that change state take an operating system lock on `lock` (`flock`
+on Unix, `LockFileEx` on Windows), so it is released the moment its holder
+exits, even if it crashes. The file stays in place and holds the pid of the
+last holder, which a waiting command names.
+
+The folder is only ever created by turnback, so turnback refuses anything
+there it did not make. If git tracks a path inside `.turnback/`, in any
+case, the files came with the repository from whoever can push to it, and
+every command stops with an explanation. If the folder, `git/`, `turns/` or
+`lock` is a symbolic link or not the kind of entry turnback creates, commands
+stop too, and the lock is opened without following links. Otherwise a link
+planted by a repository or an archive could aim turnback's writes at any file
+the user owns.
 
 ## Commit turns
 
@@ -180,6 +194,8 @@ The state just before the undo and the result are recorded as a new turn.
 6. **Verified writes.** Every written file is checked on disk. If anything
    did not land, the undo is rolled back, or recorded as a partial undo when
    a rollback is impossible.
+7. **Only its own state.** turnback refuses to run when git tracks files in
+   `.turnback/`, and never follows a link there.
 
 ## The web page
 

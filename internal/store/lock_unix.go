@@ -8,6 +8,11 @@ import (
 	"syscall"
 )
 
+// openLock opens the lock file, creating it, without following a symlink.
+func openLock(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW, 0o644)
+}
+
 // tryLock takes an exclusive flock on f without waiting.
 func tryLock(f *os.File) (bool, error) {
 	err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)

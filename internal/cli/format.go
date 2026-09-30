@@ -159,6 +159,19 @@ func explain(env *Env, err error) error {
 		return errorf("no turns recorded yet").
 			withHint("Record one with 'turnback start' and 'turnback end'.")
 	}
+	var tracked *app.TrackedStateError
+	if errors.As(err, &tracked) {
+		top, _, _ := strings.Cut(tracked.Path, "/")
+		return errorf("%v", err).withHint(
+			"Files there can come from anyone who can push to this repository, so turnback does not run while git tracks them.",
+			"If they are yours, stop tracking them with: git rm -r --cached "+top)
+	}
+	var unsafe *store.UnsafeError
+	if errors.As(err, &unsafe) {
+		return errorf("%v", err).withHint(
+			"turnback only uses what it made itself in .turnback, so a link there cannot redirect what it writes.",
+			"Remove the link itself, not what it points to, and run the command again.")
+	}
 	var aborted *app.UndoAbortedError
 	if errors.As(err, &aborted) {
 		return errorf("%v", err).withHint("Fix the problem above, for example a folder that is not writable, and run the undo again.")

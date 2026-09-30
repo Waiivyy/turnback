@@ -175,3 +175,14 @@ func TestAgo(t *testing.T) {
 		t.Errorf("ago(old) = %q, want %q", got, "on 2026-01-02")
 	}
 }
+
+func TestAPlantedTurnbackFolderIsExplained(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write(".turnback/turns/0001.json", `{"id": 1}`)
+	repo.Commit("planted")
+	code, _, stderr := run(t, repo.Dir, "start")
+	if code != 1 || !strings.Contains(stderr, "git tracks .turnback/turns/0001.json") ||
+		!strings.Contains(stderr, "git rm -r --cached .turnback") {
+		t.Errorf("exit %d, stderr:\n%s", code, stderr)
+	}
+}
