@@ -179,6 +179,28 @@ func TestStartCanRecordTheTurnInProgressFirst(t *testing.T) {
 	}
 }
 
+func TestStartBeginsWhereTheTurnInProgressEnded(t *testing.T) {
+	// Taking a second snapshot for the new turn would leave whatever
+	// changed between the two snapshots out of both turns.
+	repo := testutil.NewRepo(t)
+	repo.Write("a.txt", "1\n")
+	repo.Commit("initial")
+	a := openApp(t, repo)
+	start(t, a, app.StartOptions{})
+	repo.Write("a.txt", "2\n")
+	changed, err := a.Start(app.StartOptions{EndOpen: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed.Closed == nil || changed.Closed.Turn == nil {
+		t.Fatalf("closed = %+v, want a turn recorded", changed.Closed)
+	}
+	if changed.Session.Snapshot != changed.Closed.Turn.After {
+		t.Errorf("the new turn starts at %s, not where turn %d ended, %s",
+			changed.Session.Snapshot, changed.Closed.Turn.ID, changed.Closed.Turn.After)
+	}
+}
+
 func TestStartRecordsNothingForAnUnchangedTurnInProgress(t *testing.T) {
 	repo := testutil.NewRepo(t)
 	repo.Write("a.txt", "1\n")

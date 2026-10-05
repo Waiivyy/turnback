@@ -128,13 +128,21 @@ func (a *App) Start(opts StartOptions) (*Started, error) {
 			return nil, err
 		}
 	}
-	tree, err := sh.Snapshot()
-	if err != nil {
-		return nil, err
-	}
-	commit, err := sh.Commit(tree, "", "turn started")
-	if err != nil {
-		return nil, err
+	var tree, commit string
+	if closed != nil {
+		// The new turn starts where the one just ended stopped: a second
+		// snapshot would leave changes made in between out of both turns.
+		tree, commit = closed.tree, closed.Session.Snapshot
+		if closed.Turn != nil {
+			commit = closed.Turn.After
+		}
+	} else {
+		if tree, err = sh.Snapshot(); err != nil {
+			return nil, err
+		}
+		if commit, err = sh.Commit(tree, "", "turn started"); err != nil {
+			return nil, err
+		}
 	}
 	if err := sh.SetRef(sessionRef, commit); err != nil {
 		return nil, err
@@ -166,6 +174,7 @@ type Ended struct {
 	Session   *store.Session
 	Turn      *store.Turn // nil when nothing changed or the turn was discarded
 	Discarded bool
+	tree      string // the snapshot that ended the turn, unless discarded
 }
 
 // End snapshots the working tree again and records everything that changed
@@ -187,7 +196,11 @@ func (a *App) End(opts EndOptions) (*Ended, error) {
 	if sess == nil {
 		return nil, ErrNoSession
 	}
-	return a.end(sh, sess, opts)
+	res, err := a.end(sh, sess, opts)
+	if err == nil && res.Turn != nil {
+		sh.Tidy() // best effort housekeeping
+	}
+	return res, err
 }
 
 // end records sess as a turn, or drops it, and closes it. The caller holds
@@ -203,6 +216,7 @@ func (a *App) end(sh *shadow.Repo, sess *store.Session, opts EndOptions) (*Ended
 	if err != nil {
 		return nil, err
 	}
+	res.tree = tree
 	changes, err := sh.Changes(sess.Snapshot, tree)
 	if err != nil {
 		return nil, err
@@ -247,11 +261,7 @@ func (a *App) end(sh *shadow.Repo, sess *store.Session, opts EndOptions) (*Ended
 	}
 	moveCheckpoint(sh, commit)
 	res.Turn = turn
-	if err := a.closeSession(sh); err != nil {
-		return res, err
-	}
-	sh.Tidy() // best effort housekeeping
-	return res, nil
+	return res, a.closeSession(sh)
 }
 
 // closeSession forgets the turn in progress.
