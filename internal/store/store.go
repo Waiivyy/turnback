@@ -129,12 +129,26 @@ func (s *Store) Init() error {
 		return err
 	}
 	for name, content := range map[string]string{".gitignore": gitignore, "README.txt": readme} {
-		path := filepath.Join(s.Dir, name)
-		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
-			if err := writeFileAtomic(path, []byte(content)); err != nil {
-				return err
-			}
+		if err := createFile(filepath.Join(s.Dir, name), []byte(content), writeFileAtomic); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// createFile writes content to path with write, unless the file exists.
+// Commands create these files before they take the lock, so two of them
+// starting at once may both write one; Windows then refuses the second
+// rename. The file is there all the same, with the same content.
+func createFile(path string, content []byte, write func(string, []byte) error) error {
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err := write(path, content); err != nil {
+		if _, statErr := os.Stat(path); statErr == nil {
+			return nil
+		}
+		return err
 	}
 	return nil
 }

@@ -56,6 +56,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- On Windows, two turnback commands starting at the same moment in a
+  repository where turnback had not run before could fail with "Access is
+  denied" while creating `.turnback/`. The second one now uses the files the
+  first created.
 - Undoing a turn that renamed a file whose name git ignores, such as a
   force-added `.env.example` moved with `git mv`, deleted the new name while
   leaving the old one missing, so the file was lost. A rename is now undone
