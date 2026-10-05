@@ -11,8 +11,10 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"unicode"
 
@@ -307,23 +309,63 @@ func TestTurnbackCallsReadsShellLikeTheShell(t *testing.T) {
 	}
 }
 
-// checkCall fails the test unless the real command line accepts args: the
-// command exists and knows every option. Asking for help after the options
-// checks them all without running the command.
+// checkCall fails the test unless the real command line accepts args.
 func checkCall(t *testing.T, where string, args []string) {
+	t.Helper()
+	if err := validCall(t, args); err != nil {
+		t.Errorf("%s: turnback %s: %v", where, strings.Join(args, " "), err)
+	}
+}
+
+// validCall reports whether the real command line accepts args: the command
+// exists and knows every option. Asking for help after the options checks
+// them all without running the command.
+func validCall(t *testing.T, args []string) error {
 	t.Helper()
 	for _, a := range args {
 		if strings.HasPrefix(a, "<") && strings.HasSuffix(a, ">") {
-			t.Errorf("%s: turnback %s: use a real value instead of %s", where, strings.Join(args, " "), a)
-			return
+			return fmt.Errorf("use a real value instead of %s", a)
 		}
+	}
+	// Asking for help does not check hook's action.
+	if len(args) > 0 && args[0] == "hook" &&
+		(len(args) < 2 || !slices.Contains([]string{"install", "uninstall", "start", "end", "post-commit"}, args[1])) {
+		return errors.New("hook needs install, uninstall, start, end or post-commit")
 	}
 	cmd := exec.Command(binary, append(append([]string{}, args...), "--help")...)
 	cmd.Dir = t.TempDir()
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil || stderr.Len() > 0 {
-		t.Errorf("%s: turnback %s is not a valid command line: %v %s", where, strings.Join(args, " "), err, stderr.String())
+		return fmt.Errorf("not a valid command line: %v %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+func TestValidCallAcceptsOnlyRealCommandLines(t *testing.T) {
+	for _, args := range [][]string{
+		{"log", "--since", "2h"},
+		{"undo", "4", "--yes"},
+		{"help", "hook"},
+		{"hook", "install"},
+		{"hook", "start", "--agent", "cursor"},
+		{"hook", "end"},
+	} {
+		if err := validCall(t, args); err != nil {
+			t.Errorf("turnback %s: %v", strings.Join(args, " "), err)
+		}
+	}
+	for _, args := range [][]string{
+		{"lgo"},
+		{"log", "--newest"},
+		{"hook"},
+		{"hook", "stat"},
+		{"hook", "start", "--bogus"},
+		{"show", "<turn>"},
+	} {
+		if validCall(t, args) == nil {
+			t.Errorf("turnback %s was accepted", strings.Join(args, " "))
+		}
 	}
 }
 
@@ -672,5 +714,89 @@ func TestIntegrationDocsShowTheTestedSettings(t *testing.T) {
 		if !shown {
 			t.Errorf("%s does not show the settings in examples/hooks/%s/%s", doc, s.agent, s.file)
 		}
+	}
+}
+
+func TestConcurrentHookCallsStayQuietAndKeepStateConsistent(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write("a.txt", "1\n")
+	repo.Commit("initial")
+
+	// Six agents in one working tree, against the advice in the docs: they
+	// end each other's turns, but every call must still succeed quietly and
+	// leave consistent records behind.
+	const agents = 6
+	type call struct {
+		args           string
+		code           int
+		stdout, stderr string
+	}
+	calls := make(chan call, 2*agents)
+	writeErrs := make(chan error, agents)
+	var wg sync.WaitGroup
+	run := func(args ...string) {
+		cmd := exec.Command(binary, args...)
+		cmd.Dir = repo.Dir
+		var out, errOut bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &out, &errOut
+		code := 0
+		if err := cmd.Run(); err != nil {
+			code = -1
+			var exit *exec.ExitError
+			if errors.As(err, &exit) {
+				code = exit.ExitCode()
+			}
+		}
+		calls <- call{strings.Join(args, " "), code, out.String(), errOut.String()}
+	}
+	for i := 0; i < agents; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			run("hook", "start", "--agent", fmt.Sprint("agent", i))
+			writeErrs <- os.WriteFile(repo.Path(fmt.Sprintf("f%d.txt", i)), []byte("x\n"), 0o644)
+			run("hook", "end")
+		}(i)
+	}
+	wg.Wait()
+	close(calls)
+	close(writeErrs)
+	for err := range writeErrs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for c := range calls {
+		if c.code != 0 || c.stdout != "" || c.stderr != "" {
+			t.Errorf("turnback %s: exit %d, stdout %q, stderr %q", c.args, c.code, c.stdout, c.stderr)
+		}
+	}
+
+	var turns []struct {
+		ID    int `json:"id"`
+		Files []struct {
+			Path string `json:"path"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal([]byte(turnback(t, repo.Dir, "log", "--json")), &turns); err != nil {
+		t.Fatal(err)
+	}
+	ids, paths := map[int]bool{}, map[string]int{}
+	for _, turn := range turns {
+		if ids[turn.ID] {
+			t.Errorf("turn id %d is used twice", turn.ID)
+		}
+		ids[turn.ID] = true
+		for _, f := range turn.Files {
+			paths[f.Path]++
+		}
+	}
+	for path, n := range paths {
+		if n > 1 {
+			t.Errorf("%s is recorded in %d turns", path, n)
+		}
+	}
+	if status := turnback(t, repo.Dir, "status"); !strings.Contains(status, "Not recording") {
+		t.Errorf("a turn is still open after every agent ended:\n%s", status)
 	}
 }
