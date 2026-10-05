@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -97,27 +99,40 @@ func hookMessage(action string, err error) string {
 }
 
 // hookApp opens turnback on the project a hook is about: the first folder
-// the agent's input names that is inside a git repository, or else the
-// folder the hook runs in. Cursor, for one, runs user-level hooks from its
-// own settings folder.
+// the agent's input names that is inside a git repository. Only when the
+// input names no folder does it use the folder the hook runs in, which need
+// not be the project: Cursor, for one, runs user-level hooks from its own
+// settings folder.
 func hookApp(env *Env, payload map[string]any) (*app.App, error) {
-	for _, dir := range payloadDirs(payload) {
+	named := payloadDirs(payload)
+	if len(named) == 0 {
+		return app.Open(env.Dir, env.Now)
+	}
+	for _, dir := range named {
+		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+			continue
+		}
 		if a, err := app.Open(dir, env.Now); !errors.Is(err, git.ErrNotRepository) {
 			return a, err
 		}
 	}
-	return app.Open(env.Dir, env.Now)
+	return nil, git.ErrNotRepository
 }
 
-// payloadDirs returns the existing folders, given as absolute paths, that an
-// agent's input names: workspace_roots (Cursor), then cwd (most others).
+// payloadDirs returns the absolute paths an agent's input names as the
+// folders it works in: workspace_roots (Cursor), then cwd (most others).
 func payloadDirs(payload map[string]any) []string {
 	var dirs []string
 	add := func(v any) {
-		if dir, ok := v.(string); ok && filepath.IsAbs(dir) {
-			if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
-				dirs = append(dirs, dir)
-			}
+		dir, ok := v.(string)
+		if !ok {
+			return
+		}
+		if runtime.GOOS == "windows" {
+			dir = withoutURLSlash(dir)
+		}
+		if filepath.IsAbs(dir) {
+			dirs = append(dirs, dir)
 		}
 	}
 	if roots, ok := payload["workspace_roots"].([]any); ok {
@@ -127,6 +142,16 @@ func payloadDirs(payload map[string]any) []string {
 	}
 	add(payload["cwd"])
 	return dirs
+}
+
+// withoutURLSlash turns a drive path written the way URLs write it, as in
+// /C:/Users, into one Windows reads, C:/Users.
+func withoutURLSlash(path string) string {
+	if len(path) >= 3 && path[0] == '/' && path[2] == ':' &&
+		('a' <= path[1] && path[1] <= 'z' || 'A' <= path[1] && path[1] <= 'Z') {
+		return path[1:]
+	}
+	return path
 }
 
 // readPayload returns the JSON object an agent passes its hook on standard
@@ -139,8 +164,12 @@ func readPayload(env *Env) map[string]any {
 	}
 	got := make(chan map[string]any, 1)
 	go func() {
+		input := bufio.NewReader(io.LimitReader(env.Stdin, payloadLimit))
+		if bom, err := input.Peek(3); err == nil && string(bom) == "\xef\xbb\xbf" {
+			input.Discard(3) // a byte order mark, which JSON does not allow
+		}
 		var payload map[string]any
-		if json.NewDecoder(io.LimitReader(env.Stdin, payloadLimit)).Decode(&payload) != nil {
+		if json.NewDecoder(input).Decode(&payload) != nil {
 			payload = nil
 		}
 		got <- payload

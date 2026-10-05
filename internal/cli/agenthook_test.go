@@ -175,6 +175,75 @@ func TestHookPrefersTheProjectNamedInTheInput(t *testing.T) {
 	}
 }
 
+func TestHookReadsInputThatStartsWithAByteOrderMark(t *testing.T) {
+	repo := committedRepo(t)
+	settings := notARepository(t)
+	input := func() io.Reader {
+		b, err := json.Marshal(map[string]any{"workspace_roots": []string{repo.Dir}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return bytes.NewReader(append([]byte{0xEF, 0xBB, 0xBF}, b...))
+	}
+	code, stdout, stderr := runWithInput(t, settings, input(), "hook", "start")
+	quiet(t, "hook start", code, stdout, stderr)
+	repo.Write("a.txt", "2\n")
+	code, stdout, stderr = runWithInput(t, settings, input(), "hook", "end")
+	quiet(t, "hook end", code, stdout, stderr)
+
+	if turns := loggedTurns(t, repo.Dir); len(turns) != 1 {
+		t.Errorf("turns = %+v, want 1", turns)
+	}
+}
+
+func TestDrivePathsWrittenLikeURLsLoseTheirLeadingSlash(t *testing.T) {
+	for in, want := range map[string]string{
+		"/C:/Users/me/project": "C:/Users/me/project",
+		"/d:/work":             "d:/work",
+		"/C:":                  "C:",
+		"C:/Users/me":          "C:/Users/me",
+		"/home/me/project":     "/home/me/project",
+		"//server/share":       "//server/share",
+		"/1:/x":                "/1:/x",
+	} {
+		if got := withoutURLSlash(in); got != want {
+			t.Errorf("withoutURLSlash(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestHookReadsWindowsPathsWrittenLikeURLs(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("drive letters exist on Windows only")
+	}
+	repo := committedRepo(t)
+	settings := notARepository(t)
+	input := func() io.Reader {
+		return jsonInput(t, map[string]any{"workspace_roots": []string{"/" + filepath.ToSlash(repo.Dir)}})
+	}
+	code, stdout, stderr := runWithInput(t, settings, input(), "hook", "start")
+	quiet(t, "hook start", code, stdout, stderr)
+	repo.Write("a.txt", "2\n")
+	code, stdout, stderr = runWithInput(t, settings, input(), "hook", "end")
+	quiet(t, "hook end", code, stdout, stderr)
+
+	if turns := loggedTurns(t, repo.Dir); len(turns) != 1 {
+		t.Errorf("turns = %+v, want 1", turns)
+	}
+}
+
+func TestHookDoesNotRecordElsewhereWhenTheNamedProjectIsNoRepository(t *testing.T) {
+	// The agent works in a folder outside git; the hook runs in a
+	// repository that happens to enclose the agent's settings folder.
+	notes := notARepository(t)
+	home := testutil.NewRepo(t)
+	code, stdout, stderr := runWithInput(t, home.Dir, jsonInput(t, map[string]any{"cwd": notes}), "hook", "start")
+	oneLine(t, "hook start", code, stdout, stderr, "not inside a git repository")
+	if home.Exists(".turnback") {
+		t.Error("the hook recorded in the repository it ran in, not in the project the agent named")
+	}
+}
+
 func TestHookIgnoresInputThatIsNotJSON(t *testing.T) {
 	repo := committedRepo(t)
 	code, stdout, stderr := runWithInput(t, repo.Dir, strings.NewReader("{not json"), "hook", "start")
