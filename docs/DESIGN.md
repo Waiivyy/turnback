@@ -84,6 +84,46 @@ commit, so nobody has to remember `start` and `end`.
   itself.
 - The checkpoint only exists while the hook is installed.
 
+## Agent hooks
+
+Agents that run commands from their own hooks can record turns without
+anyone typing `start` and `end`: the hook that fires when a prompt is
+submitted runs `turnback hook start`, and the one that fires when the agent
+has finished runs `turnback hook end`. Both record turns exactly like
+`start` and `end`, with four differences that keep a hook from getting in
+the agent's way:
+
+- **Exit status 0, always.** Most agents read status 2 from a prompt hook
+  as "block this prompt" and from a stop hook as "keep working", and some
+  show a warning for any other failure. turnback reports a problem as one
+  line on standard error and lets the agent carry on. It prints nothing when
+  all goes well: several agents add a prompt hook's output to the model's
+  context.
+- **The project comes from the hook's input.** Agents pass a JSON object on
+  standard input. turnback uses the first folder it names that is inside a
+  git repository, `workspace_roots` and then `cwd`, and otherwise the folder
+  the hook runs in, because some agents run user-level hooks from their own
+  settings folder. It never reads a terminal, waits at most two seconds for
+  input that does not come, and stops reading once the object is complete,
+  so an agent that keeps standard input open does not hold the hook up.
+  Input that is not JSON is ignored.
+- **A turn left open is recorded first.** A turn stays open when an agent
+  does not run its stop hook, as some do not when you stop them. Under the
+  same lock, `hook start` records that turn as its own turn before it starts
+  the next, so two prompts are never merged into one turn and nothing is
+  lost.
+- **Nothing to end is not an error.** `hook end` does nothing when no turn
+  is being recorded, so a stop hook that runs twice, or without a matching
+  prompt hook, is harmless.
+
+The settings for each agent in `examples/hooks` end every command with
+`|| exit 0`: a missing or older turnback, which fails with status 2 on the
+unknown `hook start`, could otherwise block a prompt.
+
+A turn records everything that changed between the two hooks, whoever
+changed it. Two agents in the same working tree would end each other's
+turns; separate git worktrees each have their own `.turnback/`.
+
 ## Snapshots
 
 `.turnback/git` is a private git repository whose work tree is your working
