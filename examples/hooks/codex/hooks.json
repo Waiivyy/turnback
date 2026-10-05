@@ -1,0 +1,38 @@
+{
+  "description": "Record every Codex turn with turnback.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "turnback hook start --agent codex || exit 0",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "turnback hook end || exit 0",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Interrupt": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "turnback hook end || exit 0",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

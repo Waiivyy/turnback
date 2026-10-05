@@ -1,0 +1,10 @@
+{
+  "session_id": "0199b2f4-1c2d-7e3f-8a9b-0c1d2e3f4a5b",
+  "transcript_path": null,
+  "cwd": "/path/to/project",
+  "hook_event_name": "UserPromptSubmit",
+  "model": "example-model",
+  "permission_mode": "default",
+  "turn_id": "0199b2f4-7a8b-7c9d-8e0f-1a2b3c4d5e6f",
+  "prompt": "Add rate limiting to the API"
+}

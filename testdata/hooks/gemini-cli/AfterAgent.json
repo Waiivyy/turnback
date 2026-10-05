@@ -1,0 +1,10 @@
+{
+  "session_id": "4f6c2a1e-9b8d-4e7f-a6b5-c4d3e2f1a0b9",
+  "transcript_path": "/home/user/.gemini/tmp/project/chats/session.json",
+  "cwd": "/path/to/project",
+  "hook_event_name": "AfterAgent",
+  "timestamp": "2026-10-05T14:01:00.000Z",
+  "prompt": "Add rate limiting to the API",
+  "prompt_response": "Added a rate limiter to the API.",
+  "stop_hook_active": false
+}

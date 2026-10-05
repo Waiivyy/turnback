@@ -1,0 +1,8 @@
+{
+  "timestamp": "2026-10-05T14:00:00.000Z",
+  "cwd": "/path/to/project",
+  "session_id": "6d1f0c7e-2b3a-4c5d-8e9f-a0b1c2d3e4f5",
+  "hook_event_name": "UserPromptSubmit",
+  "transcript_path": "/home/user/.config/Code/User/workspaceStorage/transcript.json",
+  "prompt": "Add rate limiting to the API"
+}
