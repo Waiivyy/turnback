@@ -36,6 +36,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
   host, and runs only its own script.
 - Release archives carry a signed build provenance attestation, which
   `gh attestation verify` checks.
+- Each release writes a Homebrew cask from its checksums and pushes it to
+  Waiivyy/homebrew-tap, so `brew install waiivyy/tap/turnback` installs the
+  same archives the release attests, on macOS and Linux. The binaries are not
+  signed by Apple, so the cask clears macOS's quarantine flag after
+  installing.
 - CI runs the tests on Windows too, and against git 2.30.0, the oldest
   version turnback supports.
 - `turnback --version` names the commit a release was built from and that
