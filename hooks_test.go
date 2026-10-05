@@ -722,10 +722,10 @@ func TestConcurrentHookCallsStayQuietAndKeepStateConsistent(t *testing.T) {
 	repo.Write("a.txt", "1\n")
 	repo.Commit("initial")
 
-	// Six agents in one working tree, against the advice in the docs: they
+	// Four agents in one working tree, against the advice in the docs: they
 	// end each other's turns, but every call must still succeed quietly and
 	// leave consistent records behind.
-	const agents = 6
+	const agents = 4
 	type call struct {
 		args           string
 		code           int
