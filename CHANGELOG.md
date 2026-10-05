@@ -15,6 +15,16 @@ and the project uses [Semantic Versioning](https://semver.org/).
   skipped, and existing or tool-managed hooks are never replaced.
 - `turnback show` names the commit that closed a commit turn, and
   `turnback status` says when commits record turns.
+- `turnback hook start` and `turnback hook end`, for an agent's own prompt
+  and stop hooks. They record turns like `start` and `end`, but always exit
+  0, print nothing unless something goes wrong, find the project in the JSON
+  the agent passes, and `hook start` first records a turn that was never
+  ended, so a stopped agent neither blocks the next prompt nor merges it into
+  the old turn.
+- Hook settings for Cursor, GitHub Copilot (CLI and VS Code), Codex CLI and
+  Gemini CLI in `examples/hooks`, with a guide per agent in
+  `docs/integrations`, tested with the input each agent documents. Aider is
+  covered by the git hook.
 - Turns without a description are described from their diff, naming the
   functions and types they add, change or remove in Go, JavaScript and
   TypeScript, Python, Rust and Ruby, as in "Add withRetry; update Get".
