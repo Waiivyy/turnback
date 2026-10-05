@@ -144,6 +144,62 @@ func TestStartRefusesWhileATurnIsBeingRecorded(t *testing.T) {
 	}
 }
 
+func TestStartCanRecordTheTurnInProgressFirst(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write("a.txt", "1\n")
+	repo.Commit("initial")
+	a := openApp(t, repo)
+
+	// A turn that never ended, as when an agent is stopped midway.
+	start(t, a, app.StartOptions{Agent: "first"})
+	repo.Write("a.txt", "2\n")
+
+	res, err := a.Start(app.StartOptions{Agent: "second", EndOpen: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Closed == nil || res.Closed.Turn == nil || res.Closed.Turn.ID != 1 {
+		t.Fatalf("closed = %+v, want turn 1 recorded", res.Closed)
+	}
+	repo.Write("b.txt", "new\n")
+	second := end(t, a, app.EndOptions{})
+
+	first, err := a.Store.Turn(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := paths(first.Files); !reflect.DeepEqual(got, []string{"M a.txt"}) || first.Agent != "first" {
+		t.Errorf("turn 1: files %v, agent %q; want [M a.txt], first", got, first.Agent)
+	}
+	if second.Turn == nil || second.Turn.ID != 2 {
+		t.Fatalf("second turn = %+v, want turn 2", second.Turn)
+	}
+	if got := paths(second.Turn.Files); !reflect.DeepEqual(got, []string{"A b.txt"}) || second.Turn.Agent != "second" {
+		t.Errorf("turn 2: files %v, agent %q; want [A b.txt], second", got, second.Turn.Agent)
+	}
+}
+
+func TestStartRecordsNothingForAnUnchangedTurnInProgress(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Write("a.txt", "1\n")
+	a := openApp(t, repo)
+	start(t, a, app.StartOptions{})
+
+	res, err := a.Start(app.StartOptions{EndOpen: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Closed == nil || res.Closed.Turn != nil {
+		t.Errorf("closed = %+v, want the turn in progress closed without a turn", res.Closed)
+	}
+	if turns, _ := a.Store.Turns(); len(turns) != 0 {
+		t.Errorf("%d turns saved, want 0", len(turns))
+	}
+	if sess, _ := a.Store.Session(); sess == nil {
+		t.Error("no turn is being recorded after start")
+	}
+}
+
 func TestEndWithoutStartFails(t *testing.T) {
 	repo := testutil.NewRepo(t)
 	a := openApp(t, repo)

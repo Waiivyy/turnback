@@ -97,13 +97,15 @@ func (a *App) begin() (sh *shadow.Repo, unlock func(), err error) {
 type StartOptions struct {
 	Description string // what the agent was asked to do
 	Agent       string // which agent is making the changes
+	EndOpen     bool   // end a turn still being recorded, instead of refusing to start
 }
 
 // Started describes a turn that has begun recording.
 type Started struct {
 	Session     *store.Session
-	Files       int  // files in the starting snapshot
-	Initialized bool // this call created turnback's folder
+	Files       int    // files in the starting snapshot
+	Initialized bool   // this call created turnback's folder
+	Closed      *Ended // the turn that was still being recorded, ended first (EndOpen)
 }
 
 // Start snapshots the working tree and begins recording a turn.
@@ -115,10 +117,16 @@ func (a *App) Start(opts StartOptions) (*Started, error) {
 	}
 	defer unlock()
 
+	var closed *Ended
 	if sess, err := a.Store.Session(); err != nil {
 		return nil, err
 	} else if sess != nil {
-		return nil, &SessionActiveError{Session: sess}
+		if !opts.EndOpen {
+			return nil, &SessionActiveError{Session: sess}
+		}
+		if closed, err = a.end(sh, sess, EndOptions{}); err != nil {
+			return nil, err
+		}
 	}
 	tree, err := sh.Snapshot()
 	if err != nil {
@@ -144,7 +152,7 @@ func (a *App) Start(opts StartOptions) (*Started, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Started{Session: sess, Files: files, Initialized: initialized}, nil
+	return &Started{Session: sess, Files: files, Initialized: initialized, Closed: closed}, nil
 }
 
 // EndOptions configures End.
@@ -179,6 +187,12 @@ func (a *App) End(opts EndOptions) (*Ended, error) {
 	if sess == nil {
 		return nil, ErrNoSession
 	}
+	return a.end(sh, sess, opts)
+}
+
+// end records sess as a turn, or drops it, and closes it. The caller holds
+// the lock.
+func (a *App) end(sh *shadow.Repo, sess *store.Session, opts EndOptions) (*Ended, error) {
 	res := &Ended{Session: sess}
 	if opts.Discard {
 		res.Discarded = true
