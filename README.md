@@ -5,7 +5,7 @@
 <h1 align="center">turnback</h1>
 
 <p align="center">
-  <strong>Per-turn history and selective undo for AI coding agents, built on git.</strong>
+  <strong>turnback records each turn of your AI coding agent and undoes any one of them, or one file of it, while keeping everything that came after.</strong>
 </p>
 
 <p align="center">
@@ -19,6 +19,7 @@
 <p align="center">
   <a href="#install">Install</a> &nbsp;&middot;&nbsp;
   <a href="#quickstart">Quickstart</a> &nbsp;&middot;&nbsp;
+  <a href="#why-turnback">Why turnback</a> &nbsp;&middot;&nbsp;
   <a href="#example-session">Example</a> &nbsp;&middot;&nbsp;
   <a href="#commands">Commands</a> &nbsp;&middot;&nbsp;
   <a href="#from-your-agents-hooks">Integrations</a> &nbsp;&middot;&nbsp;
@@ -30,6 +31,101 @@
 <p align="center">
   <img src="docs/assets/demo.svg" width="760" alt="A terminal running turnback log, which lists three agent turns, then turnback undo 2, which previews the change, asks for confirmation and records the undo as turn 4">
 </p>
+
+## Install
+
+**Homebrew**, on macOS and Linux:
+
+```bash
+brew install waiivyy/tap/turnback
+```
+
+**Go**, 1.24 or newer:
+
+```bash
+go install github.com/Waiivyy/turnback@latest
+```
+
+**Release binaries.** On macOS and Linux, this script downloads the binary for
+your machine from the
+[latest release](https://github.com/Waiivyy/turnback/releases/latest), checks
+its SHA-256 checksum and installs it to `~/.local/bin`, without root rights:
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/Waiivyy/turnback/main/install.sh | sh
+```
+
+On Windows, or to do it by hand, download the archive for your system from the
+[releases page](https://github.com/Waiivyy/turnback/releases/latest), unpack
+it and put `turnback` on your `PATH`.
+
+turnback needs **git 2.30 or newer**. Check the install with
+`turnback --version`.
+
+<details>
+<summary>More about installing</summary>
+
+- The [script](install.sh) downloads over HTTPS only and changes nothing unless
+  the checksum matches. If `~/.local/bin` is not on your `PATH` yet, it prints
+  the line to add. Set `TURNBACK_INSTALL_DIR` to install elsewhere, or
+  `TURNBACK_VERSION` to a release tag such as `v0.2.0` to pin a version.
+- Releases after 0.1.0 carry a signed build provenance attestation, so you can
+  check that an archive was built by this repository's release workflow:
+  `gh attestation verify turnback_linux_amd64.tar.gz --repo Waiivyy/turnback`.
+- To build from source:
+
+  ```bash
+  git clone https://github.com/Waiivyy/turnback.git
+  cd turnback
+  go build -o turnback .
+  ```
+
+- To uninstall, run `brew uninstall turnback`, or delete the binary
+  (`rm ~/.local/bin/turnback` if you used the script), and delete the
+  `.turnback/` folder in any repository you used it in.
+
+</details>
+
+## Quickstart
+
+Inside any git repository:
+
+1. **Record a turn.** Let your agent do it: copy its hook settings from
+   [docs/integrations](docs/integrations/README.md), for Cursor, GitHub
+   Copilot, Codex CLI or Gemini CLI, and send it a prompt. Or wrap a change
+   yourself:
+
+   ```bash
+   turnback start    # right before the agent, or you, edit files
+   turnback end      # when the edits are done
+   ```
+
+2. **See it.** Every turn, newest first, then what turn 1 changed:
+
+   ```bash
+   turnback log
+   turnback show 1
+   ```
+
+3. **Undo it.** Look first, then take back just that turn; everything after it
+   stays:
+
+   ```bash
+   turnback undo 1 --dry-run
+   turnback undo 1
+   ```
+
+   The second command shows the change again and asks before it writes
+   anything.
+
+While a turn is being recorded, `turnback status` shows what it has changed so
+far, and `turnback end --discard` drops it.
+
+More: [why not the built-in checkpoints?](docs/FAQ.md),
+[integrations](docs/integrations/README.md), and
+[how turnback works and why it is safe](docs/DESIGN.md).
+
+## Why turnback
 
 AI coding agents change many files in a single turn. When one of those turns
 goes wrong, your options are to pick through the diff by hand, or to reset to
@@ -46,8 +142,8 @@ one you don't want while everything else stays put.
   it touched and its diff.
 - **A page to browse it all.** `turnback ui` opens a local, read-only web page
   with every turn, the files it touched and its diff, updated as you work.
-- **Your edits stay yours.** Changes you make between agent turns are never
-  counted as part of a turn, and an undo keeps them.
+- **Your edits stay yours.** With `start` and `end`, or your agent's hooks, edits
+  you make between turns belong to no turn, and an undo keeps them.
 - **Safe by default.** Every undo is a dry run until you confirm. Overlapping
   edits are reported, never merged into a mess, and every undo can itself be
   undone.
@@ -56,66 +152,6 @@ one you don't want while everything else stays put.
 - **One small binary.** Written in Go, no dependencies beyond git, nothing to
   configure. Works with any agent: Cursor, Copilot, Aider, Codex, or anything
   else that edits files in your working tree.
-
-## Install
-
-**macOS and Linux**, one line, no Go needed:
-
-```bash
-curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/Waiivyy/turnback/main/install.sh | sh
-```
-
-The [script](install.sh) downloads the binary for your machine from the
-[latest release](https://github.com/Waiivyy/turnback/releases/latest) over
-HTTPS only, checks its SHA-256 checksum and installs it to `~/.local/bin`,
-without root rights. It changes nothing unless the checksum matches. If that
-folder is not on your `PATH` yet, the script prints the line to add.
-Set `TURNBACK_INSTALL_DIR` to put it elsewhere, or `TURNBACK_VERSION=v0.1.0`
-to pin a version. Releases published after v0.1.0 also carry a signed build
-provenance attestation, so you can check that an archive was built by this
-repository's release workflow:
-`gh attestation verify turnback_linux_amd64.tar.gz --repo Waiivyy/turnback`.
-
-**Windows**, or by hand: download the archive for your system from the
-[releases page](https://github.com/Waiivyy/turnback/releases/latest), unpack
-it and put `turnback` on your `PATH`.
-
-**With Go** (1.24 or newer):
-
-```bash
-go install github.com/Waiivyy/turnback@latest
-```
-
-**From source:**
-
-```bash
-git clone https://github.com/Waiivyy/turnback.git
-cd turnback
-go build -o turnback .
-```
-
-turnback needs **git 2.30 or newer**. Check the install with
-`turnback --version`.
-
-To uninstall, delete the binary (`rm ~/.local/bin/turnback` if you used the
-script) and the `.turnback/` folder in any repository you used it in.
-
-## Quickstart
-
-Inside any git repository:
-
-```bash
-turnback start -m "Add rate limiting"   # right before you prompt the agent
-# ... the agent edits files ...
-turnback end                            # when it is done
-turnback log                            # every turn, newest first
-turnback show 1                         # what turn 1 changed
-turnback undo 1                         # take turn 1 back out, keep the rest
-```
-
-That is the whole workflow. `turnback status` shows what the turn in progress
-has changed so far, and `turnback end --discard` drops a turn you don't want to
-keep.
 
 ## Example session
 
@@ -643,10 +679,11 @@ use so far, so reports from Windows users are very welcome.
 - [x] Selective undo of a turn or a single file, with a dry run, conflict
       detection and undo of an undo
 - [x] Automatic recording at every commit, through a git hook
+- [x] Automatic recording from your agent's own hooks
 - [x] Local web UI for browsing turns
 - [x] Descriptions written from the diff when you give none
 - [x] Prebuilt binaries and a one-line install script
-- [ ] A Homebrew formula
+- [x] Installs with Homebrew
 
 ## Contributing
 
