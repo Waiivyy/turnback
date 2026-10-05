@@ -521,6 +521,17 @@ undo.
 ## FAQ
 
 <details>
+<summary><strong>Why not use my agent's checkpoints, or git?</strong></summary>
+
+Often they are enough: an agent's checkpoints take you back to an earlier
+point in the chat, and `git revert` takes back a whole commit. turnback is
+for taking back one earlier turn, or one file of it, while keeping
+everything after it, with any agent. [docs/FAQ.md](docs/FAQ.md) compares it
+with Cursor, GitHub Copilot, Aider and git, and says when each is enough.
+
+</details>
+
+<details>
 <summary><strong>Does turnback replace git?</strong></summary>
 
 No. turnback records working tree states while you work; committing, branching
