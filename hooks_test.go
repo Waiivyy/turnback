@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -531,6 +532,126 @@ func TestHookSettingsNeverFailTheAgentWhenTurnbackIsMissingOrOld(t *testing.T) {
 					}
 				}
 			}
+		}
+	}
+}
+
+// codeBlock is a fenced code block in a markdown file.
+type codeBlock struct {
+	lang string
+	text string
+	line int // line of the opening fence
+}
+
+func codeBlocks(t *testing.T, path string) []codeBlock {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var (
+		blocks []codeBlock
+		open   *codeBlock
+		body   []string
+	)
+	for i, line := range strings.Split(string(b), "\n") {
+		fence := strings.TrimSpace(line)
+		if open == nil {
+			if strings.HasPrefix(fence, "```") {
+				lang, _, _ := strings.Cut(strings.TrimSpace(strings.TrimLeft(fence, "`")), " ")
+				open, body = &codeBlock{lang: lang, line: i + 1}, nil
+			}
+			continue
+		}
+		if fence == "```" {
+			open.text = strings.Join(body, "\n")
+			blocks = append(blocks, *open)
+			open = nil
+			continue
+		}
+		body = append(body, line)
+	}
+	if open != nil {
+		t.Fatalf("%s:%d: the code block is never closed", path, open.line)
+	}
+	return blocks
+}
+
+// blockCommands returns the shell command lines in a code block: every line
+// of a shell block, the lines after "$ " in a console block, and every
+// string in a JSON block, such as the commands in hook settings.
+func blockCommands(t *testing.T, where string, b codeBlock) []string {
+	t.Helper()
+	switch b.lang {
+	case "bash", "sh", "shell", "powershell":
+		return strings.Split(strings.ReplaceAll(b.text, "\\\n", " "), "\n")
+	case "console":
+		var out []string
+		for _, line := range strings.Split(b.text, "\n") {
+			if command, ok := strings.CutPrefix(line, "$ "); ok {
+				out = append(out, command)
+			}
+		}
+		return out
+	case "json":
+		var v any
+		if err := json.Unmarshal([]byte(b.text), &v); err != nil {
+			t.Errorf("%s: the JSON block is not valid: %v", where, err)
+			return nil
+		}
+		return jsonStrings(v)
+	}
+	return nil
+}
+
+func docs(t *testing.T) []string {
+	t.Helper()
+	files := []string{"README.md"}
+	for _, pattern := range []string{"docs/*.md", "docs/integrations/*.md"} {
+		matches, err := filepath.Glob(filepath.FromSlash(pattern))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, matches...)
+	}
+	return files
+}
+
+func TestDocsOnlyShowRealCommands(t *testing.T) {
+	checked := 0
+	for _, doc := range docs(t) {
+		for _, b := range codeBlocks(t, doc) {
+			where := fmt.Sprintf("%s:%d", doc, b.line)
+			for _, command := range blockCommands(t, where, b) {
+				calls, err := turnbackCalls(command)
+				if err != nil {
+					t.Errorf("%s: %v", where, err)
+				}
+				for _, args := range calls {
+					checked++
+					checkCall(t, where, args)
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Error("found no turnback commands in the docs")
+	}
+}
+
+func TestIntegrationDocsShowTheTestedSettings(t *testing.T) {
+	for _, s := range hookSettings {
+		doc := filepath.Join("docs", "integrations", s.agent+".md")
+		want := loadJSON(t, filepath.Join("examples", "hooks", s.agent, s.file))
+		shown := false
+		for _, b := range codeBlocks(t, doc) {
+			var v any
+			if b.lang == "json" && json.Unmarshal([]byte(b.text), &v) == nil && reflect.DeepEqual(v, want) {
+				shown = true
+			}
+		}
+		if !shown {
+			t.Errorf("%s does not show the settings in examples/hooks/%s/%s", doc, s.agent, s.file)
 		}
 	}
 }
