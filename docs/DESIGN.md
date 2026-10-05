@@ -116,9 +116,12 @@ the agent's way:
   is being recorded, so a stop hook that runs twice, or without a matching
   prompt hook, is harmless.
 
-The settings for each agent in `examples/hooks` end every command with
-`|| exit 0`: a missing or older turnback, which fails with status 2 on the
-unknown `hook start`, could otherwise block a prompt.
+The settings for each agent in `examples/hooks` end their commands with
+`|| exit 0` or `; exit 0`, whichever the agent's shell understands: a
+missing or older turnback, which fails with status 2 on the unknown
+`hook start`, could otherwise block a prompt. The settings also give each
+hook two minutes, because the first snapshot of a large repository can take
+about one.
 
 A turn records everything that changed between the two hooks, whoever
 changed it. Two agents in the same working tree would end each other's

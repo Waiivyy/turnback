@@ -20,7 +20,7 @@ the same files. One file records a turn for every prompt in both.
         "type": "command",
         "bash": "turnback hook start --agent copilot || exit 0",
         "powershell": "turnback hook start --agent copilot; exit 0",
-        "timeoutSec": 30
+        "timeoutSec": 120
       }
     ],
     "agentStop": [
@@ -28,7 +28,7 @@ the same files. One file records a turn for every prompt in both.
         "type": "command",
         "bash": "turnback hook end || exit 0",
         "powershell": "turnback hook end; exit 0",
-        "timeoutSec": 30
+        "timeoutSec": 120
       }
     ]
   }

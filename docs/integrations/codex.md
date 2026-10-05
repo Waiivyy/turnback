@@ -22,7 +22,8 @@ you interrupt.
           {
             "type": "command",
             "command": "turnback hook start --agent codex || exit 0",
-            "timeout": 30
+            "commandWindows": "turnback hook start --agent codex",
+            "timeout": 120
           }
         ]
       }
@@ -33,7 +34,8 @@ you interrupt.
           {
             "type": "command",
             "command": "turnback hook end || exit 0",
-            "timeout": 30
+            "commandWindows": "turnback hook end",
+            "timeout": 120
           }
         ]
       }
@@ -44,6 +46,7 @@ you interrupt.
           {
             "type": "command",
             "command": "turnback hook end || exit 0",
+            "commandWindows": "turnback hook end",
             "timeout": 3
           }
         ]
@@ -93,10 +96,13 @@ off every hook, set `hooks = false` in the `[features]` table of
 
 ## Limits
 
-- According to its source code, Codex runs hooks with your shell.
-  `|| exit 0` works in sh, bash, zsh, cmd and PowerShell 7, but not in
-  Windows PowerShell 5.1; a `commandWindows` field can give Windows a
-  command of its own. These settings have not been tried on Windows.
+- According to its source code, Codex runs hooks with your shell, which on
+  Windows can be PowerShell or cmd, and no guard works in both. So
+  `commandWindows` runs turnback without one. turnback still exits 0
+  whatever happens, but a turnback too old to know `hook start` fails with
+  status 2 there, which blocks your prompt: check the version first, as
+  [Before you start](README.md#before-you-start) says. These settings have
+  not been tried on Windows.
 - The Codex IDE extension shares its configuration with the CLI, but its
   documentation does not say whether it runs hooks.
 

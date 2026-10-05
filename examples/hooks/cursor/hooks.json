@@ -4,13 +4,13 @@
     "beforeSubmitPrompt": [
       {
         "command": "turnback hook start --agent cursor || exit 0",
-        "timeout": 30
+        "timeout": 120
       }
     ],
     "stop": [
       {
         "command": "turnback hook end || exit 0",
-        "timeout": 30
+        "timeout": 120
       }
     ]
   }

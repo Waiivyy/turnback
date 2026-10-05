@@ -7,7 +7,8 @@
           {
             "type": "command",
             "command": "turnback hook start --agent codex || exit 0",
-            "timeout": 30
+            "commandWindows": "turnback hook start --agent codex",
+            "timeout": 120
           }
         ]
       }
@@ -18,7 +19,8 @@
           {
             "type": "command",
             "command": "turnback hook end || exit 0",
-            "timeout": 30
+            "commandWindows": "turnback hook end",
+            "timeout": 120
           }
         ]
       }
@@ -29,6 +31,7 @@
           {
             "type": "command",
             "command": "turnback hook end || exit 0",
+            "commandWindows": "turnback hook end",
             "timeout": 3
           }
         ]

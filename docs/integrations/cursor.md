@@ -19,13 +19,13 @@ record a turn for every prompt you send.
     "beforeSubmitPrompt": [
       {
         "command": "turnback hook start --agent cursor || exit 0",
-        "timeout": 30
+        "timeout": 120
       }
     ],
     "stop": [
       {
         "command": "turnback hook end || exit 0",
-        "timeout": 30
+        "timeout": 120
       }
     ]
   }
@@ -80,8 +80,8 @@ picks up the change when you save.
 - Cloud agents do not run hooks from `~/.cursor/hooks.json`.
 - Cursor also loads hooks from another agent's settings files while its
   setting "Include Third-Party Plugins, Skills, and Other Configs" is on,
-  which it is by default. If turnback is set up there too, the second call
-  finds nothing to do.
+  which it is by default. If turnback is set up there too, the duplicate
+  calls are harmless; see [Things to know](README.md#things-to-know).
 
 ## Sources
 

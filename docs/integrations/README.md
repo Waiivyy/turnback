@@ -41,10 +41,11 @@ keep a hook from getting in the agent's way:
   starts a turn of its own.
 - **`hook end` does nothing when no turn is being recorded.**
 
-Every command in the settings ends with `|| exit 0`, or `; exit 0` in
-PowerShell. If turnback is not installed, or is too old to know
-`hook start`, the shell would otherwise fail with a status that the agent may
-read as "block this prompt".
+The commands in the settings end with `|| exit 0` or `; exit 0`, whichever
+the shell that the agent uses understands. If turnback is not installed, or
+is too old to know `hook start`, the shell would otherwise fail with a status
+that the agent may read as "block this prompt". The one exception is Codex
+on Windows; see [its guide](codex.md#limits).
 
 ## Before you start
 
@@ -61,6 +62,26 @@ version. Until a release includes it, install from the main branch with Go:
 ```bash
 go install github.com/Waiivyy/turnback@main
 ```
+
+Two more things are worth doing once:
+
+- **In a large repository, take the first snapshot by hand.** The first
+  snapshot copies every file into `.turnback/` and can take a minute in a
+  repository with tens of thousands of files; later ones only look at what
+  changed. The settings allow each hook two minutes, but an agent that
+  stops a hook halfway leaves the turn without a proper start. Run this once
+  in the repository before you rely on the hooks:
+
+```bash
+turnback start
+turnback end --discard
+```
+
+- **Make sure the agent finds turnback.** An agent started from the Dock or
+  a launcher may not see the `PATH` your shell sets up, so `go install`'s
+  folder may be missing. If a hook reports that turnback is not found, write
+  turnback's full path in the settings instead; `command -v turnback` prints
+  it.
 
 ## Things to know
 
@@ -86,7 +107,8 @@ go install github.com/Waiivyy/turnback@main
   agent sends it as a new prompt.
 - **Duplicate settings are harmless.** Some agents also run hooks from other
   agents' settings files. If turnback is set up in two of them, the second
-  call finds nothing to do.
+  `hook start` simply starts the turn again, with the last `--agent` name,
+  and the second `hook end` finds nothing to do.
 
 ## Other agents
 

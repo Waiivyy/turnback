@@ -22,8 +22,8 @@ hooks are on by default. These settings record a turn for every prompt.
           {
             "name": "turnback-start",
             "type": "command",
-            "command": "turnback hook start --agent gemini-cli || exit 0",
-            "timeout": 30000
+            "command": "turnback hook start --agent gemini-cli; exit 0",
+            "timeout": 120000
           }
         ]
       }
@@ -34,8 +34,8 @@ hooks are on by default. These settings record a turn for every prompt.
           {
             "name": "turnback-end",
             "type": "command",
-            "command": "turnback hook end || exit 0",
-            "timeout": 30000
+            "command": "turnback hook end; exit 0",
+            "timeout": 120000
           }
         ]
       }
@@ -72,7 +72,7 @@ there, `turnback status` says whether a turn is still open.
 - Gemini CLI blocks the prompt when a hook exits with status 2, or retries
   the turn when the end hook does. According to its source code, it does
   the same for any status other than 0 and 1 that comes with output, as
-  when the shell cannot find a command. `|| exit 0` prevents both.
+  when the shell cannot find a command. `; exit 0` prevents both.
 
 ## Stopped turns
 
@@ -90,9 +90,10 @@ Delete the two entries. To keep them but switch them off, run
 
 - Gemini CLI warns you about a project's hooks the first time they run and
   whenever their name or command changes.
-- According to its source code, Gemini CLI runs hooks with PowerShell on
-  Windows. `|| exit 0` works in PowerShell 7 but not in Windows
-  PowerShell 5.1. These settings have not been tried on Windows.
+- According to its source code, Gemini CLI runs hooks with bash on macOS
+  and Linux and with PowerShell on Windows. `; exit 0` works in both,
+  including Windows PowerShell 5.1. These settings have not been tried on
+  Windows.
 
 ## Sources
 

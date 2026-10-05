@@ -27,7 +27,18 @@ import (
 // hookTurn is one way an agent's settings start and end a turn.
 type hookTurn struct {
 	start, end           []any  // JSON paths of the two commands in the settings file
+	winStart, winEnd     []any  // the commands for Windows, where they differ
 	startInput, endInput string // the agent's documented input, in testdata/hooks/<agent>
+}
+
+// commands returns the turn's start and end commands for this system.
+func (s hookSetting) commands(t *testing.T, turn hookTurn) (start, end string) {
+	t.Helper()
+	startPath, endPath := turn.start, turn.end
+	if runtime.GOOS == "windows" && turn.winStart != nil {
+		startPath, endPath = turn.winStart, turn.winEnd
+	}
+	return s.command(t, startPath), s.command(t, endPath)
 }
 
 type hookSetting struct {
@@ -51,10 +62,14 @@ var hookSettings = []hookSetting{
 		turns: []hookTurn{{
 			start: []any{"hooks", "userPromptSubmitted", 0, "bash"}, startInput: "userPromptSubmitted.json",
 			end: []any{"hooks", "agentStop", 0, "bash"}, endInput: "agentStop.json",
+			winStart: []any{"hooks", "userPromptSubmitted", 0, "powershell"},
+			winEnd:   []any{"hooks", "agentStop", 0, "powershell"},
 		}, {
 			// VS Code runs the same file and passes its own input.
 			start: []any{"hooks", "userPromptSubmitted", 0, "bash"}, startInput: "vscode-UserPromptSubmit.json",
 			end: []any{"hooks", "agentStop", 0, "bash"}, endInput: "vscode-Stop.json",
+			winStart: []any{"hooks", "userPromptSubmitted", 0, "powershell"},
+			winEnd:   []any{"hooks", "agentStop", 0, "powershell"},
 		}},
 	},
 	{
@@ -62,10 +77,14 @@ var hookSettings = []hookSetting{
 		turns: []hookTurn{{
 			start: []any{"hooks", "UserPromptSubmit", 0, "hooks", 0, "command"}, startInput: "UserPromptSubmit.json",
 			end: []any{"hooks", "Stop", 0, "hooks", 0, "command"}, endInput: "Stop.json",
+			winStart: []any{"hooks", "UserPromptSubmit", 0, "hooks", 0, "commandWindows"},
+			winEnd:   []any{"hooks", "Stop", 0, "hooks", 0, "commandWindows"},
 		}, {
-			// An interrupted turn ends with Interrupt instead of Stop.
+			// An interrupted turn ends with Interrupt.
 			start: []any{"hooks", "UserPromptSubmit", 0, "hooks", 0, "command"}, startInput: "UserPromptSubmit.json",
 			end: []any{"hooks", "Interrupt", 0, "hooks", 0, "command"}, endInput: "Interrupt.json",
+			winStart: []any{"hooks", "UserPromptSubmit", 0, "hooks", 0, "commandWindows"},
+			winEnd:   []any{"hooks", "Interrupt", 0, "hooks", 0, "commandWindows"},
 		}},
 	},
 	{
@@ -453,7 +472,7 @@ func TestHookSettingsRecordTurnsFromTheAgentsInput(t *testing.T) {
 		for i, turn := range s.turns {
 			t.Run(fmt.Sprintf("%s/%d", s.agent, i), func(t *testing.T) {
 				repo, dir := hookDirs(t, s)
-				start, end := s.command(t, turn.start), s.command(t, turn.end)
+				start, end := s.commands(t, turn)
 				startInput, endInput := s.input(t, turn.startInput, repo.Dir), s.input(t, turn.endInput, repo.Dir)
 
 				code, stdout, stderr := runHookCommand(t, start, dir, startInput)
@@ -479,7 +498,7 @@ func TestHookSettingsKeepInterruptedTurnsApart(t *testing.T) {
 		t.Run(s.agent, func(t *testing.T) {
 			repo, dir := hookDirs(t, s)
 			turn := s.turns[0]
-			start, end := s.command(t, turn.start), s.command(t, turn.end)
+			start, end := s.commands(t, turn)
 			startInput, endInput := s.input(t, turn.startInput, repo.Dir), s.input(t, turn.endInput, repo.Dir)
 
 			// An end without a start, as after installing the settings

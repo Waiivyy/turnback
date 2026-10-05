@@ -6,8 +6,8 @@
           {
             "name": "turnback-start",
             "type": "command",
-            "command": "turnback hook start --agent gemini-cli || exit 0",
-            "timeout": 30000
+            "command": "turnback hook start --agent gemini-cli; exit 0",
+            "timeout": 120000
           }
         ]
       }
@@ -18,8 +18,8 @@
           {
             "name": "turnback-end",
             "type": "command",
-            "command": "turnback hook end || exit 0",
-            "timeout": 30000
+            "command": "turnback hook end; exit 0",
+            "timeout": 120000
           }
         ]
       }
