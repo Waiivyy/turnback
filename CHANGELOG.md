@@ -7,6 +7,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-05
+
 ### Added
 
 - `turnback hook install` and `turnback hook uninstall`: a post-commit hook
@@ -156,5 +158,6 @@ First release.
 - Project scaffold: Go module, MIT license, README, changelog and design notes.
 - Command-line skeleton with `help` and `version`.
 
-[Unreleased]: https://github.com/Waiivyy/turnback/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Waiivyy/turnback/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Waiivyy/turnback/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Waiivyy/turnback/releases/tag/v0.1.0

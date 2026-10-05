@@ -49,19 +49,15 @@ on Windows; see [its guide](codex.md#limits).
 
 ## Before you start
 
-The hooks need a turnback that knows `hook start`. turnback 0.1.0 does not;
-check with:
+The hooks need turnback 0.2.0 or newer, the first version that knows
+`hook start`. Check with:
 
 ```bash
-turnback help hook
+turnback --version
 ```
 
-If the help does not mention `turnback hook start`, install the latest
-version. Until a release includes it, install from the main branch with Go:
-
-```bash
-go install github.com/Waiivyy/turnback@main
-```
+If it is older, install the latest version as described in
+[Install](../../README.md#install).
 
 Two more things are worth doing once:
 
