@@ -12,8 +12,10 @@ import (
 
 var hookCommand = &command{
 	name:    "hook",
-	summary: "Record a turn at every commit, without start and end",
+	summary: "Record turns from git's or an agent's hooks",
 	usage: `Usage: turnback hook install | uninstall
+       turnback hook start [--agent <name>]
+       turnback hook end
 
 Record a turn at every commit instead of wrapping each turn in start and
 end. 'install' adds a post-commit hook to this repository; from then on,
@@ -28,6 +30,17 @@ core.hooksPath, add this line to that post-commit hook instead:
 
 'turnback start' and 'turnback end' keep working alongside the hook: while
 a turn is being recorded, commits do not close turns.
+
+'start' and 'end' are for an AI agent's own hooks. Run 'turnback hook start'
+from the hook that fires when you submit a prompt, and 'turnback hook end'
+from the one that fires when the agent has finished. They record a turn
+like 'turnback start' and 'turnback end', but never get in the agent's way:
+they always exit with status 0 and print nothing unless something went
+wrong, they find the project in the JSON the agent passes on standard
+input, and 'hook start' first records a turn that was never ended.
+
+Options for 'hook start':
+      --agent <name>  which agent is making the changes, e.g. cursor
 `,
 	run: runHook,
 }
@@ -51,13 +64,16 @@ func selfPath() string {
 }
 
 func runHook(env *Env, args []string) error {
+	if len(args) > 0 && (args[0] == "start" || args[0] == "end") {
+		return agentHook(env, args[0], args[1:])
+	}
 	fs := flag.NewFlagSet("hook", flag.ContinueOnError)
 	pos, err := parseFlags(fs, args)
 	if err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return usageErrorf("hook needs 'install' or 'uninstall'").withHint("Run 'turnback help hook' for usage.")
+		return usageErrorf("hook needs 'install', 'uninstall', 'start' or 'end'").withHint("Run 'turnback help hook' for usage.")
 	}
 	a, err := app.Open(env.Dir, env.Now)
 	if err != nil {
