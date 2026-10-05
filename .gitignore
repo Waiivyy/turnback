@@ -22,3 +22,6 @@ coverage.*
 
 # Release notes written by scripts/build-release.sh
 /release-notes.md
+
+# Homebrew cask written by the release workflow
+/homebrew/

@@ -46,6 +46,10 @@ jobs:
           go-version: stable
       - name: Build archives
         run: scripts/build-release.sh "$GITHUB_REF_NAME"
+      - name: Write the Homebrew cask
+        run: |
+          mkdir homebrew
+          scripts/homebrew-cask.sh "$GITHUB_REF_NAME" dist/checksums.txt >homebrew/turnback.rb
       # Anyone can check that an archive was built here, from this tag, with
       # gh attestation verify <archive> --repo Waiivyy/turnback.
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -56,6 +60,7 @@ jobs:
           name: release
           path: |
             dist/
+            homebrew/
             release-notes.md
           if-no-files-found: error
 
@@ -77,3 +82,37 @@ jobs:
             --verify-tag \
             --title "turnback $GITHUB_REF_NAME" \
             --notes-file release-notes.md
+
+  homebrew:
+    # Pushes the cask the build job wrote to Waiivyy/homebrew-tap, with a
+    # token that can write to that repository only. Like publish, it runs no
+    # code from this repository.
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release
+      - name: Update the tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::HOMEBREW_TAP_TOKEN is not set, so Waiivyy/homebrew-tap was not updated."
+            exit 0
+          fi
+          gh auth setup-git
+          git clone --depth 1 https://github.com/Waiivyy/homebrew-tap.git tap
+          mkdir -p tap/Casks
+          cp homebrew/turnback.rb tap/Casks/turnback.rb
+          cd tap
+          git add Casks/turnback.rb
+          if git diff --cached --quiet; then
+            echo "The cask is already up to date."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "turnback ${GITHUB_REF_NAME#v}"
+          git push -q origin HEAD
