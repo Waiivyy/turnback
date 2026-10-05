@@ -21,6 +21,7 @@
   <a href="#quickstart">Quickstart</a> &nbsp;&middot;&nbsp;
   <a href="#example-session">Example</a> &nbsp;&middot;&nbsp;
   <a href="#commands">Commands</a> &nbsp;&middot;&nbsp;
+  <a href="#from-your-agents-hooks">Integrations</a> &nbsp;&middot;&nbsp;
   <a href="#browse-turns-in-your-browser">Web page</a> &nbsp;&middot;&nbsp;
   <a href="#safety">Safety</a> &nbsp;&middot;&nbsp;
   <a href="#faq">FAQ</a>
@@ -313,6 +314,7 @@ hint: Undo the later turns first, or leave the conflicting files out and undo th
 | `turnback show [<turn>]` | Show a turn's details, files and diff; the latest turn by default |
 | `turnback undo <turn>` | Take one turn back out, or some of its files, keeping everything after it |
 | `turnback hook install` | Record a turn at every commit instead of wrapping turns in `start` and `end` |
+| `turnback hook start`, `turnback hook end` | Record turns from your agent's own hooks, see [Integrations](#from-your-agents-hooks) |
 | `turnback ui` | Browse the recorded turns and their diffs in a local web page |
 
 `<turn>` is an id from `turnback log`, or `last`. `turnback help <command>`
@@ -449,9 +451,25 @@ turnback does not care which agent edits your files: run `turnback start`
 before you send a prompt and `turnback end` when the agent is done. Tag turns
 with `--agent` if you switch between agents.
 
-If your agent or editor can run a shell command when a turn begins and when it
-ends, point those hooks at `turnback start` and `turnback end` and every turn
-is recorded without you thinking about it.
+If your agent can run a command when you submit a prompt and again when it has
+finished, let those hooks do it. Point them at `turnback hook start` and
+`turnback hook end`, which record turns like `start` and `end` but never block
+or break the agent: they always exit 0, print nothing unless something goes
+wrong, and close a turn the agent left open when you stopped it.
+
+| Agent | Mechanism | Status | Guide |
+|---|---|---|---|
+| Cursor, editor and CLI | `hooks.json`: `beforeSubmitPrompt`, `stop` | Supported | [Cursor](docs/integrations/cursor.md) |
+| GitHub Copilot CLI and VS Code | hook files: `userPromptSubmitted`, `agentStop` | Supported; VS Code hooks are in preview | [Copilot](docs/integrations/copilot.md) |
+| GitHub Copilot in JetBrains IDEs | the same hook files | Partial: no end hook documented | [Copilot](docs/integrations/copilot.md#jetbrains-ides) |
+| Codex CLI | `hooks.json`: `UserPromptSubmit`, `Stop`, `Interrupt` | Supported | [Codex](docs/integrations/codex.md) |
+| Gemini CLI | `settings.json`: `BeforeAgent`, `AfterAgent` | Supported | [Gemini CLI](docs/integrations/gemini-cli.md) |
+| Aider | no hooks; it commits every change | Use `turnback hook install` | [Aider](docs/integrations/aider.md) |
+| Other agents | | Not covered yet | [Other agents](docs/integrations/README.md#other-agents) |
+
+The settings are tested with the input each agent documents. What they do,
+their limits and their sources are in
+[docs/integrations](docs/integrations/README.md).
 
 ## How it works
 
