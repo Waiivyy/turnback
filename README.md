@@ -625,8 +625,10 @@ whose size or modification time changed since the last one.
 <details>
 <summary><strong>Does it send my code anywhere?</strong></summary>
 
-No. turnback never opens a network connection. Everything it records stays in
-`.turnback/` inside your repository.
+No. turnback never connects to anything over the network. The only connections
+it accepts are those to `turnback ui`, which serves its page on 127.0.0.1, on
+your own computer. Everything it records stays in `.turnback/` inside your
+repository.
 
 </details>
 
