@@ -9,6 +9,12 @@ set -eu
 version=${1:?usage: scripts/build-release.sh <version, e.g. v0.1.0>}
 cd "$(dirname "$0")/.."
 
+# turnback --version names the commit and its date, rather than the time of
+# the build, so that building the same commit again gives the same binary.
+commit=$(git rev-parse HEAD)
+commit_date=$(TZ=UTC git log -1 --date=format-local:%Y-%m-%d --format=%cd)
+pkg=github.com/Waiivyy/turnback/internal/cli
+
 rm -rf dist
 mkdir dist
 for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64 freebsd/amd64; do
@@ -19,7 +25,7 @@ for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 wi
 	if [ "$os" = windows ]; then bin=turnback.exe; fi
 	mkdir "dist/$name"
 	CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
-		-ldflags "-s -w -X github.com/Waiivyy/turnback/internal/cli.version=$version" \
+		-ldflags "-s -w -X $pkg.version=$version -X $pkg.commit=$commit -X $pkg.date=$commit_date" \
 		-o "dist/$name/$bin" .
 	cp LICENSE README.md "dist/$name/"
 	if [ "$os" = windows ]; then

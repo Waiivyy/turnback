@@ -12,9 +12,11 @@ import (
 	"time"
 )
 
-// version is set for release builds with
-// -ldflags "-X github.com/Waiivyy/turnback/internal/cli.version=v1.2.3".
-var version = ""
+// version, commit and date are set for release builds with -ldflags, as in
+// "-X github.com/Waiivyy/turnback/internal/cli.version=v1.2.3". date is the
+// commit's date, so that building the same commit again gives the same
+// binary.
+var version, commit, date = "", "", ""
 
 // Version returns the version of this build.
 func Version() string {
@@ -25,6 +27,23 @@ func Version() string {
 		return info.Main.Version
 	}
 	return "dev"
+}
+
+// versionLine is what --version prints: the version, and for a release the
+// commit and date it was built from.
+func versionLine() string {
+	var details []string
+	if commit != "" {
+		details = append(details, "commit "+commit[:min(len(commit), 12)])
+	}
+	if date != "" {
+		details = append(details, date)
+	}
+	line := "turnback " + Version()
+	if len(details) > 0 {
+		line += " (" + strings.Join(details, ", ") + ")"
+	}
+	return line
 }
 
 // Env holds everything a command needs from the outside world, so commands
@@ -105,7 +124,7 @@ func Run(env *Env, args []string) int {
 		printUsage(env.Stdout)
 		return 0
 	case "-v", "--version", "version":
-		fmt.Fprintf(env.Stdout, "turnback %s\n", Version())
+		fmt.Fprintln(env.Stdout, versionLine())
 		return 0
 	}
 	c := lookup(args[0])

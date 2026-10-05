@@ -38,6 +38,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
   `gh attestation verify` checks.
 - CI runs the tests on Windows too, and against git 2.30.0, the oldest
   version turnback supports.
+- `turnback --version` names the commit a release was built from and that
+  commit's date, as in `turnback v0.2.0 (commit 1a2b3c4d5e6f, 2026-10-05)`.
 - `docs/FAQ.md` compares turnback with the undo features of Cursor, GitHub
   Copilot, Aider and git, and says when each of them is enough.
 
