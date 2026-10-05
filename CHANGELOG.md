@@ -28,6 +28,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
   `gh attestation verify` checks.
 - CI runs the tests on Windows too, and against git 2.30.0, the oldest
   version turnback supports.
+- `docs/FAQ.md` compares turnback with the undo features of Cursor, GitHub
+  Copilot, Aider and git, and says when each of them is enough.
 
 ### Changed
 
